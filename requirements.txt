@@ -1,0 +1,14 @@
+# Live service (step 1-5)
+google-adk==2.12.0      # agent framework for the live detection service
+litellm==1.106.2        # model adapter ADK uses to talk to Ollama (not an agent framework)
+pydantic==2.14.1        # every agent input/output is a Pydantic model
+mcp==2.3.0              # custom MCP tool server
+httpx==0.28.1           # HTTP client used inside the MCP tools (RDAP, feeds)
+tldextract==5.4.0       # registrable-domain parsing, offline suffix list
+
+# Dev
+pytest
+pytest-asyncio
+
+# Later pass: offline background crews
+# crewai
