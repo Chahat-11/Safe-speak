@@ -19,6 +19,7 @@ from safespeak.agents.coordinator import Coordinator, create_coordinator
 from safespeak.agents.critic import create_critic
 from safespeak.agents.explainer import create_explainer
 from safespeak.agents.parser import create_parser
+from safespeak.agents.pattern import create_pattern_specialist
 from safespeak.agents.reasoner import create_reasoner
 from safespeak.agents.router import create_router
 from safespeak.agents.specialists import create_stub_specialists
@@ -46,7 +47,7 @@ def build_root_agent(model=None) -> Coordinator:
     return create_coordinator(
         parser=create_parser(model),
         router=create_router(),
-        specialists=[create_verifier(model), *create_stub_specialists()],
+        specialists=[create_verifier(model), create_pattern_specialist(), *create_stub_specialists()],
         reasoner=create_reasoner(model),
         explainer=create_explainer(model),
         critic=create_critic(model),

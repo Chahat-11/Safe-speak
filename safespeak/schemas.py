@@ -298,7 +298,11 @@ class VerifierInput(Strict):
 
 
 class ReasonerInput(Strict):
+    message_text: str = Field(description="The message itself, secrets already masked")
     parsed: ParsedMessage
+    specialists_already_run: list[Specialist] = Field(
+        default_factory=list, description="Asking these again only helps if something new could be found"
+    )
     verifier_findings: list[VerifierFinding]
     pattern_matches: list[PatternMatch]
     retrieved_evidence: list[RetrievedEvidence]

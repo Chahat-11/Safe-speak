@@ -32,6 +32,7 @@ async def test_happy_path_renders_markdown_and_closes_case():
     assert result.case.status == CaseStatus.CLOSED
     assert result.case.verdict.label == VerdictLabel.SCAM
     assert result.case.critique.approved
+    assert "credential_request" in {m.pattern_id for m in result.case.pattern_matches}  # "OTP bhejo"
     assert result.markdown.startswith("## ⚠️ This is a scam")
     assert "**Confidence:** 93%" in result.markdown
 
@@ -143,3 +144,12 @@ async def test_trace_has_agent_model_and_tool_records(trace_file):
     by_agent = {m.agent: m for m in result.metrics.agents}
     assert by_agent["verifier"].model_calls == 2  # tool-call turn + final turn
     assert by_agent["parser"].duration_ms > 0
+
+
+async def test_reasoner_sees_masked_message_and_specialists_already_run():
+    llm = fake()
+    await analyse(MESSAGE, model=llm)
+
+    prompt = str(llm.calls_for("reasoner")[0].config.system_instruction)
+    assert "OTP [OTP] bhejo" in prompt  # the message itself, secret masked
+    assert '"specialists_already_run"' in prompt and '"verifier"' in prompt

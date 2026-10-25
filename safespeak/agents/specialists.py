@@ -1,4 +1,4 @@
-"""STUBS for Pattern, Retrieval and Correlation (the Verifier is real: verifier.py).
+"""STUBS for Retrieval and Correlation (real ones: verifier.py, pattern.py).
 
 Each posts an empty-but-valid section so the pipeline runs end to end.
 The real versions replace these in a later pass; the Coordinator does not
@@ -16,7 +16,6 @@ from safespeak.schemas import CorrelationResult, Specialist
 
 # specialist -> (case section it owns, empty value to post)
 _STUB_OUTPUT = {
-    Specialist.PATTERN: ("pattern_matches", []),
     Specialist.RETRIEVAL: ("retrieved_evidence", []),
     Specialist.CORRELATION: ("correlation", CorrelationResult(summary="Stub: correlation not implemented yet.")),
 }

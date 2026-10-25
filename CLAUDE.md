@@ -52,7 +52,9 @@ Two capped loops, caps enforced in `before_agent` callbacks (not prompts):
 | `safespeak/agents/router.py` | Coordinator's routing step (rule-based), carries the loop cap |
 | `safespeak/agents/{parser,reasoner,explainer,critic}.py` | LLM agents with an `output_schema` |
 | `safespeak/agents/verifier.py` | LLM agent that calls the two MCP tools; findings built from tool results |
-| `safespeak/agents/specialists.py` | STUBS for Pattern, Retrieval, Correlation (empty results) |
+| `safespeak/agents/pattern.py` | Pattern specialist: rule-based matcher, no LLM, no tools |
+| `safespeak/agents/pattern_catalogue.py` | Scam patterns = required + supporting regex cues, optional `exempt` |
+| `safespeak/agents/specialists.py` | STUBS for Retrieval, Correlation (empty results) |
 | `safespeak/guardrails/input_guard.py` | before_agent on Coordinator: block, redact, flag |
 | `safespeak/guardrails/model_guard.py` | before_model: strip chat turns, re-redact |
 | `safespeak/guardrails/loop_caps.py` | before_agent caps: Router (Reasoner loop), Explainer (Critic loop) |
@@ -65,6 +67,7 @@ Two capped loops, caps enforced in `before_agent` callbacks (not prompts):
 | `safespeak/mcp_server/reputation_tool.py` | Tool 2: OpenPhish + Phishing.Database blocklists, brand lookalike |
 | `safespeak/mcp_server/{domains,cache}.py` | Domain parsing (offline suffix list), TTL file cache |
 | `safespeak/crews/` | CrewAI offline crews (later pass) |
+| `scripts/pattern_coverage.py` | Dev-only: pattern hit rates on dev + hard negatives (refuses test_real) |
 | `data/` | Datasets (see Data rules); `data/cache/` = tool cache (git-ignored) |
 | `tests/` | pytest; `fake_llm.py` scripted model, `conftest.py` offline tool cache |
 
@@ -77,7 +80,8 @@ Two capped loops, caps enforced in `before_agent` callbacks (not prompts):
 - `case_id`, `created_at`, `message_text` are read-only after `open_case()`.
 - Only redacted text is ever stored in the case.
 - LLM agents get a typed input model (`ParserInput`, `VerifierInput`,
-  `ReasonerInput`, `ExplainerInput`, `CriticInput`) built from the case; the model guard removes ADK's chat
+  `ReasonerInput`, `ExplainerInput`, `CriticInput`) built from the case
+  (`ReasonerInput` includes the masked `message_text`); the model guard removes ADK's chat
   turns, so the case is their only input. Raw output goes to a `temp:` key,
   then `post_output` validates it and posts it to the case.
 - Custom (non-LLM) agents write state via `state_event()` so the delta is
@@ -105,6 +109,19 @@ Two capped loops, caps enforced in `before_agent` callbacks (not prompts):
   `skip_if_no_domains` (before_agent) avoids an LLM call with nothing to check.
 - Only the domain name leaves the machine (RDAP); feeds are downloaded and
   matched locally. Cache TTLs in `config.py`.
+
+## Pattern specialist
+
+- A pattern matches only when ALL `required` cues hit; each `supporting`
+  cue adds `SUPPORTING_BONUS` (0.05) to its weight. Never match on one word.
+- `exempt`: a required cue does not count if its sentence matches it
+  (advice like "never share your OTP", doorstep delivery codes, cashback).
+- Links to `*.gov.in` / `*.nic.in` are hidden before matching.
+- Tune ONLY with `scripts/pattern_coverage.py` (dev + hard negatives).
+  Last run: dev scams 67.8% flagged, dev legit 0.0%, hard negatives 0.3%
+  (optimistic: tuned on dev). The 10 hard-negative alarms are "parcel not
+  delivered, update address: bit.ly/..." which reads as a scam; left to the
+  Verifier rather than weakening the rule.
 
 ## Data rules
 
@@ -136,7 +153,11 @@ stops later callbacks).
 - [x] MCP server (2 tools) + real Verifier
 - [x] Critic agent + capped Explainer <-> Critic loop
 - [x] Evaluation harness (`safespeak.evaluate`) + `--json` CLI flag
-- [ ] Real Pattern, Retrieval (RAG), Correlation specialists
+- [x] Real Pattern specialist (rule-based catalogue)
+- [ ] Real Retrieval (RAG), Correlation specialists
+- [x] Reasoner sees the masked message + `specialists_already_run`; prompt
+      weighs evidence explicitly ("no findings" is not "uncertain")
+- [ ] Don't re-run the Verifier on a loop-back when its domains were already checked
 - [ ] Phase 3 (deferred, do not start): CrewAI crews, A2A, cloud deploy,
       architecture comparison, 40-run benchmark
 
