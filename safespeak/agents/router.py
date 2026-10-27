@@ -14,7 +14,7 @@ from google.adk.events import Event
 
 from safespeak.agents.common import state_event
 from safespeak.blackboard import post, read_case
-from safespeak.guardrails.loop_caps import cap_reasoner_loops
+from safespeak.guardrails.loop_caps import cap_reasoner_loops, skip_useless_loop_back
 from safespeak.observability.tracer import tracer
 from safespeak.schemas import CaseRecord, CaseStatus, RoutingDecision, Specialist
 
@@ -49,6 +49,7 @@ def _post_routing(state) -> None:
 def create_router() -> Router:
     return Router(
         name="router",
-        before_agent_callback=[tracer.before_agent, cap_reasoner_loops],
+        # Useless-loop check first, so a skipped loop does not use up the cap.
+        before_agent_callback=[tracer.before_agent, skip_useless_loop_back, cap_reasoner_loops],
         after_agent_callback=[tracer.after_agent],
     )

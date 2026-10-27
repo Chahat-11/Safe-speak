@@ -311,6 +311,7 @@ class ReasonerInput(Strict):
 
 
 class ExplainerInput(Strict):
+    reply_language: str = Field(description="Language to write in, decided by code, e.g. 'English'")
     parsed: ParsedMessage
     verdict: Verdict
     critic_issues: list[str] = Field(default_factory=list)

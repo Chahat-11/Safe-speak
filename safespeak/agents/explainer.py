@@ -1,18 +1,19 @@
 """Explainer: turns the Verdict into plain-language advice.
 
-Reads:  parsed + verdict + Critic issues (as ExplainerInput)
+Reads:  reply_language + parsed + verdict + Critic issues (as ExplainerInput)
 Writes: case.explanation  (status -> EXPLAINED)
 Re-entry after a Critic rejection is capped by cap_critic_loops (before_agent).
 Markdown formatting is done in code (render.py), not by the model.
 """
 
 from safespeak.agents.common import make_llm_agent
+from safespeak.guardrails.language_check import REPLY_LANGUAGE, check_explanation_script
 from safespeak.guardrails.loop_caps import cap_critic_loops
 from safespeak.schemas import CaseRecord, CaseStatus, Explanation, ExplainerInput
 
 PROMPT = """You are the SafeSpeak Explainer.
 Explain the verdict to an ordinary person who is not technical.
-- Write in the language given by parsed.language (Hinglish if 'hinglish').
+- Write EVERY field in reply_language. Do not switch language.
 - headline: one short sentence saying whether this is a scam.
 - why: 2-4 reasons in everyday words, based on verdict.key_reasons.
 - what_to_do: 2-4 concrete steps (e.g. do not click the link, block the
@@ -22,7 +23,8 @@ Explain the verdict to an ordinary person who is not technical.
 
 def build_input(case: CaseRecord) -> ExplainerInput:
     issues = case.critique.issues if case.critique else []
-    return ExplainerInput(parsed=case.parsed, verdict=case.verdict, critic_issues=issues)
+    language = REPLY_LANGUAGE.get(case.parsed.language, "English")
+    return ExplainerInput(reply_language=language, parsed=case.parsed, verdict=case.verdict, critic_issues=issues)
 
 
 def create_explainer(model=None):
@@ -35,4 +37,5 @@ def create_explainer(model=None):
         status=CaseStatus.EXPLAINED,
         model=model,
         guards=[cap_critic_loops],
+        checks=[check_explanation_script],
     )

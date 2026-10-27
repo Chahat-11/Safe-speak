@@ -95,12 +95,16 @@ async def test_second_invalid_output_raises():
 
 
 async def test_reasoner_loop_is_capped_at_two():
-    llm = fake(reasoner=[NEEDS_MORE] * 3)
+    # The Verifier keeps skipping the reputation check, so every loop-back is
+    # genuinely useful and only the cap can stop it.
+    only_age = {"__calls__": [TOOL_CALLS["__calls__"][0]]}
+    llm = fake(reasoner=[NEEDS_MORE] * 3, verifier=[only_age, "done"] * 3)
     result = await analyse(MESSAGE, model=llm)
 
     assert len(llm.calls_for("reasoner")) == 3  # first pass + 2 loop-backs
     assert result.case.reasoner_loops == 2
     assert "reasoner" in result.case.capped_loops
+    assert any("loop cap" in e.reason for e in result.case.guardrail_events)
     assert result.case.verdict.needs_more_evidence  # the record stays truthful
     assert result.case.routing.specialists == ["verifier"]  # loop-back routed as requested
 
@@ -142,7 +146,7 @@ async def test_trace_has_agent_model_and_tool_records(trace_file):
     assert records[-1]["kind"] == "run"
 
     by_agent = {m.agent: m for m in result.metrics.agents}
-    assert by_agent["verifier"].model_calls == 2  # tool-call turn + final turn
+    assert by_agent["verifier"].model_calls == 1  # tool-call turn; the "done" turn is answered in code
     assert by_agent["parser"].duration_ms > 0
 
 
@@ -153,3 +157,86 @@ async def test_reasoner_sees_masked_message_and_specialists_already_run():
     prompt = str(llm.calls_for("reasoner")[0].config.system_instruction)
     assert "OTP [OTP] bhejo" in prompt  # the message itself, secret masked
     assert '"specialists_already_run"' in prompt and '"verifier"' in prompt
+
+
+async def test_useless_loop_back_is_skipped():
+    llm = fake(reasoner=[NEEDS_MORE] * 3)  # asks for the verifier, whose domains are all checked
+    result = await analyse(MESSAGE, model=llm)
+
+    assert len(llm.calls_for("reasoner")) == 1  # no pointless second round
+    assert len(llm.calls_for("verifier")) == 1  # first run only; "done" is answered in code
+    assert result.case.reasoner_loops == 0  # the cap budget was not used
+    assert "reasoner" in result.case.capped_loops
+    assert any("no requested specialist" in e.reason for e in result.case.guardrail_events)
+
+
+async def test_stub_and_pattern_requests_do_not_loop():
+    asks_stubs = {**NEEDS_MORE, "requested_specialists": ["pattern", "retrieval", "correlation"]}
+    llm = fake(reasoner=[asks_stubs, VERDICT])
+    await analyse(MESSAGE, model=llm)
+
+    assert len(llm.calls_for("reasoner")) == 1
+
+
+async def test_loop_back_retries_a_check_the_verifier_skipped():
+    only_age = {"__calls__": [TOOL_CALLS["__calls__"][0]]}
+    only_reputation = {"__calls__": [TOOL_CALLS["__calls__"][1]]}
+    llm = fake(verifier=[only_age, "done", only_reputation, "done"], reasoner=[NEEDS_MORE, VERDICT])
+    result = await analyse(MESSAGE, model=llm)
+
+    findings = {f.check: f for f in result.case.verifier_findings}
+    assert findings["reputation"].source_tool == "domain_reputation"  # filled on the loop-back
+    # run 1: tool turn + "done" turn (a check was still missing); run 2: tool turn only
+    assert len(llm.calls_for("verifier")) == 3
+
+
+async def test_parser_language_is_corrected_by_code():
+    english = "Your parcel is on hold. Pay customs fee at http://hdfc-kyc-update.in/verify"
+    llm = fake(parser=[{**PARSED, "language": "hi"}])  # LLM wrongly says Hindi
+    result = await analyse(english, model=llm)
+
+    assert result.case.parsed.language == "en"
+    assert any("language" in e.reason and e.action == "replaced" for e in result.case.guardrail_events)
+
+
+async def test_english_reply_in_devanagari_is_retried():
+    hindi = {**EXPLANATION, "headline": "यह एक स्कैम है"}
+    english = "Your parcel is on hold. Pay customs fee at http://hdfc-kyc-update.in/verify"
+    llm = fake(parser=[{**PARSED, "language": "en"}], explainer=[hindi, EXPLANATION])
+    result = await analyse(english, model=llm)
+
+    assert result.case.explanation.headline == EXPLANATION["headline"]
+    retried = [e for e in result.case.guardrail_events if e.action == "retried"]
+    assert retried and "explainer" in retried[0].reason
+    prompt = str(llm.calls_for("explainer")[0].config.system_instruction)
+    assert '"reply_language": "English"' in prompt
+
+
+async def test_non_domain_text_in_urls_is_not_verified():
+    parsed = {**PARSED, "urls": [], "emails": ["Link in email."]}
+    llm = fake(parser=[parsed])
+    result = await analyse(MESSAGE, model=llm)
+
+    assert llm.calls_for("verifier") == []  # nothing domain-shaped, so no LLM call
+    assert result.case.verifier_findings == []
+
+
+async def test_verifier_tool_loop_is_stopped_in_code():
+    # The model never says "done": it keeps calling tools on a stray domain.
+    stray = {"__calls__": [{"name": "domain_age", "args": {"indicator": "hdfcbank.com"}}]}
+    llm = fake(verifier=[TOOL_CALLS, *[stray] * 20])
+    result = await analyse(MESSAGE, model=llm)
+
+    # Turn 1 checks both domains; turn 2 is answered by the guardrail, not the LLM.
+    assert len(llm.calls_for("verifier")) == 1
+    assert {f.check for f in result.case.verifier_findings} == {"domain_age", "reputation"}
+
+
+async def test_verifier_turn_budget():
+    stray = {"__calls__": [{"name": "domain_age", "args": {"indicator": "hdfcbank.com"}}]}
+    llm = fake(verifier=[stray] * 20)  # never checks the real domain
+    result = await analyse(MESSAGE, model=llm)
+
+    assert len(llm.calls_for("verifier")) == 4  # budget = 2 x 1 domain + 2
+    assert any("turn budget" in e.reason for e in result.case.guardrail_events)
+    assert {f.result for f in result.case.verifier_findings} == {CheckResult.UNKNOWN}

@@ -57,8 +57,9 @@ Two capped loops, caps enforced in `before_agent` callbacks (not prompts):
 | `safespeak/agents/specialists.py` | STUBS for Retrieval, Correlation (empty results) |
 | `safespeak/guardrails/input_guard.py` | before_agent on Coordinator: block, redact, flag |
 | `safespeak/guardrails/model_guard.py` | before_model: strip chat turns, re-redact |
-| `safespeak/guardrails/loop_caps.py` | before_agent caps: Router (Reasoner loop), Explainer (Critic loop) |
+| `safespeak/guardrails/loop_caps.py` | before_agent caps: Router (Reasoner loop), Explainer (Critic loop); useless-loop skip |
 | `safespeak/guardrails/output_guard.py` | after_agent on Coordinator: safe advice, render, close |
+| `safespeak/guardrails/language_check.py` | Parser: language set by code; Explainer: reject wrong script |
 | `safespeak/guardrails/redaction.py` | OTP/card/account/Aadhaar masking regexes |
 | `safespeak/observability/tracer.py` | JSONL trace + RunMetrics |
 | `safespeak/evaluate.py` | Evaluation harness: N messages from a CSV -> results/*.csv |
@@ -98,6 +99,18 @@ Two capped loops, caps enforced in `before_agent` callbacks (not prompts):
   Verdicts/critiques are not edited, so the record stays truthful.
 - A skipped LlmAgent's returned content is validated by ADK against its
   output_schema, so the Explainer's veto returns its last accepted draft.
+- `skip_useless_loop_back` runs on the Router BEFORE the cap: if no requested
+  specialist could add evidence (`could_add_evidence`: stubs never, Pattern
+  only once, Verifier only with unchecked domains) the loop is closed without
+  using the cap budget. The LLM asks for "more" far more often than useful.
+
+## Language
+
+- `parsed.language` is set by code (`language_check.detect_language`), not the
+  LLM: qwen2.5:7b tagged ~half of English dev messages as Hindi.
+- Explainer gets `reply_language` (e.g. "English"); `check_explanation_script`
+  raises on Devanagari in a non-Hindi reply, so the one-retry rule fixes it
+  instead of a Critic loop.
 
 ## MCP tools (exactly two; do not add more without asking)
 
@@ -106,7 +119,13 @@ Two capped loops, caps enforced in `before_agent` callbacks (not prompts):
 - Verifier callbacks: `record_finding` (after_tool) validates and posts each
   result; ignores tools called on domains not in the message.
   `fill_unchecked` (after_agent) marks skipped checks `unknown`.
-  `skip_if_no_domains` (before_agent) avoids an LLM call with nothing to check.
+  `skip_if_nothing_to_check` (before_agent) skips the LLM call when every
+  domain x check already has a real tool result (no domains, or a loop-back).
+  `stop_when_done` (before_model) ends the tool loop in code once every check
+  has a real result, or after a turn budget of 2 per domain + 2. ADK has no
+  tool-call limit; a stray "domain" once made the LLM loop 35 times.
+- `build_input` keeps only domain-shaped hosts (Parser sometimes puts words
+  like "Link in email." into urls/emails).
 - Only the domain name leaves the machine (RDAP); feeds are downloaded and
   matched locally. Cache TTLs in `config.py`.
 
@@ -157,7 +176,7 @@ stops later callbacks).
 - [ ] Real Retrieval (RAG), Correlation specialists
 - [x] Reasoner sees the masked message + `specialists_already_run`; prompt
       weighs evidence explicitly ("no findings" is not "uncertain")
-- [ ] Don't re-run the Verifier on a loop-back when its domains were already checked
+- [x] Verifier skips loop-backs when its domains were already checked
 - [ ] Phase 3 (deferred, do not start): CrewAI crews, A2A, cloud deploy,
       architecture comparison, 40-run benchmark
 

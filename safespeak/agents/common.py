@@ -64,10 +64,12 @@ def make_llm_agent(
     status: CaseStatus,
     model=None,
     guards: list[Callable] | None = None,
+    checks: list[Callable] | None = None,
 ) -> LlmAgent:
     """Create an LLM agent that reads the case and writes one case section.
 
     `guards`: extra before_agent callbacks (e.g. a loop cap) run after tracing.
+    `checks`: extra after_agent callbacks that validate/correct the posted output.
     """
     output_key = f"temp:{name}_output"
     schema = json.dumps(output_schema.model_json_schema())
@@ -85,7 +87,7 @@ def make_llm_agent(
         include_contents="none",
         output_schema=output_schema,
         output_key=output_key,
-        **llm_callbacks(guards=guards, after_agent=[post_output]),
+        **llm_callbacks(guards=guards, after_agent=[post_output, *(checks or [])]),
     )
 
 
@@ -99,17 +101,18 @@ def case_instruction(prompt: str, build_input: Callable[[CaseRecord], BaseModel]
     return instruction
 
 
-def llm_callbacks(*, guards=None, after_agent=None, after_tool=None) -> dict:
+def llm_callbacks(*, guards=None, after_agent=None, after_tool=None, model_guards=None) -> dict:
     """The fixed callback order for every LLM agent: tracing wraps everything.
 
     guards      -> before_agent, after tracing starts (may skip the agent)
     after_agent -> before tracing ends (so the trace sees what they posted)
     after_tool  -> before tool tracing
+    model_guards -> before_model, after tracing starts (may answer instead of the LLM)
     """
     return {
         "before_agent_callback": [tracer.before_agent, *(guards or [])],
         "after_agent_callback": [*(after_agent or []), tracer.after_agent],
-        "before_model_callback": [isolate_llm_request, tracer.before_model],
+        "before_model_callback": [isolate_llm_request, tracer.before_model, *(model_guards or [])],
         "after_model_callback": [tracer.after_model],
         "before_tool_callback": [tracer.before_tool],
         "after_tool_callback": [*(after_tool or []), tracer.after_tool],
