@@ -60,6 +60,7 @@ Two capped loops, caps enforced in `before_agent` callbacks (not prompts):
 | `safespeak/guardrails/loop_caps.py` | before_agent caps: Router (Reasoner loop), Explainer (Critic loop); useless-loop skip |
 | `safespeak/guardrails/output_guard.py` | after_agent on Coordinator: safe advice, render, close |
 | `safespeak/guardrails/language_check.py` | Parser: language set by code; Explainer: reject wrong script |
+| `safespeak/guardrails/critique_check.py` | after_agent on Critic: only code-confirmed problems trigger a rewrite |
 | `safespeak/guardrails/redaction.py` | OTP/card/account/Aadhaar masking regexes |
 | `safespeak/observability/tracer.py` | JSONL trace + RunMetrics |
 | `safespeak/evaluate.py` | Evaluation harness: N messages from a CSV -> results/*.csv |
@@ -111,6 +112,15 @@ Two capped loops, caps enforced in `before_agent` callbacks (not prompts):
 - Explainer gets `reply_language` (e.g. "English"); `check_explanation_script`
   raises on Devanagari in a non-Hindi reply, so the one-retry rule fixes it
   instead of a Critic loop.
+
+## Critic grounding
+
+- `ground_critique` (after_agent on Critic) sets the final CriticReview:
+  rejected only if a code check confirms a problem (`headline_issue`:
+  headline contradicts the verdict label). The Critic's own issues ride along
+  on a confirmed rejection; unconfirmed objections are approved and logged.
+- Why: qwen2.5:3b rejected every explanation on a dev sample with spurious
+  issues, so the Critic loop hit its cap on every message.
 
 ## MCP tools (exactly two; do not add more without asking)
 

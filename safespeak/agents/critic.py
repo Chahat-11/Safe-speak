@@ -5,9 +5,12 @@ Writes: case.critique  (approved + issues)
 If not approved, the Coordinator sends the case back to the Explainer, which
 sees the issues in ExplainerInput.critic_issues. The cap on that loop lives
 in guardrails/loop_caps.py (cap_critic_loops, on the Explainer).
+Its verdict is grounded in code afterwards (guardrails/critique_check.py):
+only problems a code check confirms send the explanation back.
 """
 
 from safespeak.agents.common import make_llm_agent
+from safespeak.guardrails.critique_check import ground_critique
 from safespeak.schemas import CaseRecord, CaseStatus, CriticInput, CriticReview
 
 PROMPT = """You are the SafeSpeak Critic.
@@ -34,4 +37,5 @@ def create_critic(model=None):
         section="critique",
         status=CaseStatus.EXPLAINED,
         model=model,
+        checks=[ground_critique],
     )

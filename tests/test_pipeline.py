@@ -8,7 +8,7 @@ from safespeak.agents.coordinator import SchemaViolation
 from safespeak.app import analyse
 from safespeak.schemas import CaseStatus, CheckResult, VerdictLabel
 from tests.fake_llm import (
-    APPROVED, DOMAIN, EXPLANATION, NEEDS_MORE, PARSED, REJECTED, TOOL_CALLS, VERDICT, FakeLlm,
+    APPROVED, DOMAIN, EXPLANATION, NEEDS_MORE, PARSED, REJECTED, SAYS_SAFE, HEDGED, TOOL_CALLS, VERDICT, FakeLlm,
 )
 
 MESSAGE = f"HDFC: Aapka KYC pending hai. OTP 482913 bhejo aaj hi http://{DOMAIN}/verify"
@@ -98,7 +98,7 @@ async def test_reasoner_loop_is_capped_at_two():
     # The Verifier keeps skipping the reputation check, so every loop-back is
     # genuinely useful and only the cap can stop it.
     only_age = {"__calls__": [TOOL_CALLS["__calls__"][0]]}
-    llm = fake(reasoner=[NEEDS_MORE] * 3, verifier=[only_age, "done"] * 3)
+    llm = fake(reasoner=[NEEDS_MORE] * 3, verifier=[only_age, "done"] * 3, explainer=[HEDGED])
     result = await analyse(MESSAGE, model=llm)
 
     assert len(llm.calls_for("reasoner")) == 3  # first pass + 2 loop-backs
@@ -109,17 +109,35 @@ async def test_reasoner_loop_is_capped_at_two():
     assert result.case.routing.specialists == ["verifier"]  # loop-back routed as requested
 
 
-async def test_critic_rejection_sends_issues_back_to_explainer():
-    llm = fake(critic=[REJECTED, APPROVED], explainer=[EXPLANATION, EXPLANATION])
+async def test_confirmed_rejection_sends_issues_back_to_explainer():
+    llm = fake(critic=[REJECTED, APPROVED], explainer=[SAYS_SAFE, EXPLANATION])
     result = await analyse(MESSAGE, model=llm)
 
     second_explainer_prompt = str(llm.calls_for("explainer")[1].config.system_instruction)
-    assert "Headline should mention the fake link." in second_explainer_prompt
+    assert "Headline says the message is safe" in second_explainer_prompt  # code's issue
+    assert "Headline should mention the fake link." in second_explainer_prompt  # Critic's issue
     assert result.case.critique.approved and result.case.critic_loops == 1
 
 
+async def test_unconfirmed_rejection_does_not_cost_a_rewrite():
+    llm = fake(critic=[REJECTED])  # Critic objects, but the draft agrees with the verdict
+    result = await analyse(MESSAGE, model=llm)
+
+    assert len(llm.calls_for("explainer")) == 1
+    assert result.case.critique.approved
+    assert any("not confirmed" in e.reason for e in result.case.guardrail_events)
+
+
+async def test_code_catches_a_contradiction_the_critic_missed():
+    llm = fake(critic=[APPROVED, APPROVED], explainer=[SAYS_SAFE, EXPLANATION])
+    result = await analyse(MESSAGE, model=llm)
+
+    assert len(llm.calls_for("explainer")) == 2
+    assert result.case.explanation.headline == EXPLANATION["headline"]
+
+
 async def test_critic_loop_is_capped_at_two():
-    llm = fake(critic=[REJECTED] * 3, explainer=[EXPLANATION] * 3)
+    llm = fake(critic=[REJECTED] * 3, explainer=[SAYS_SAFE] * 3)
     result = await analyse(MESSAGE, model=llm)
 
     assert len(llm.calls_for("explainer")) == 3  # first draft + 2 rewrites
@@ -160,7 +178,7 @@ async def test_reasoner_sees_masked_message_and_specialists_already_run():
 
 
 async def test_useless_loop_back_is_skipped():
-    llm = fake(reasoner=[NEEDS_MORE] * 3)  # asks for the verifier, whose domains are all checked
+    llm = fake(reasoner=[NEEDS_MORE] * 3, explainer=[HEDGED])  # asks for the verifier, whose domains are all checked
     result = await analyse(MESSAGE, model=llm)
 
     assert len(llm.calls_for("reasoner")) == 1  # no pointless second round
@@ -172,7 +190,7 @@ async def test_useless_loop_back_is_skipped():
 
 async def test_stub_and_pattern_requests_do_not_loop():
     asks_stubs = {**NEEDS_MORE, "requested_specialists": ["pattern", "retrieval", "correlation"]}
-    llm = fake(reasoner=[asks_stubs, VERDICT])
+    llm = fake(reasoner=[asks_stubs, VERDICT], explainer=[HEDGED])
     await analyse(MESSAGE, model=llm)
 
     assert len(llm.calls_for("reasoner")) == 1

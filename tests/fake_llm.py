@@ -76,3 +76,7 @@ EXPLANATION = {
 }
 APPROVED = {"approved": True, "issues": []}
 REJECTED = {"approved": False, "issues": ["Headline should mention the fake link."]}
+# A draft that contradicts a scam verdict, so the code check confirms the rejection.
+SAYS_SAFE = {**EXPLANATION, "headline": "This message is not a scam."}
+# Matches an "uncertain" verdict (NEEDS_MORE).
+HEDGED = {**EXPLANATION, "headline": "This may be a scam, be careful."}
