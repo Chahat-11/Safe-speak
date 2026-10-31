@@ -8,7 +8,7 @@ from safespeak.agents.coordinator import SchemaViolation
 from safespeak.app import analyse
 from safespeak.schemas import CaseStatus, CheckResult, VerdictLabel
 from tests.fake_llm import (
-    APPROVED, DOMAIN, EXPLANATION, NEEDS_MORE, PARSED, REJECTED, SAYS_SAFE, HEDGED, TOOL_CALLS, VERDICT, FakeLlm,
+    APPROVED, DOMAIN, EXPLANATION, NEEDS_MORE, PARSED, REJECTED, SAYS_SAFE, HEDGED, INVENTS_NUMBER, TOOL_CALLS, VERDICT, FakeLlm,
 )
 
 MESSAGE = f"HDFC: Aapka KYC pending hai. OTP 482913 bhejo aaj hi http://{DOMAIN}/verify"
@@ -115,7 +115,7 @@ async def test_confirmed_rejection_sends_issues_back_to_explainer():
 
     second_explainer_prompt = str(llm.calls_for("explainer")[1].config.system_instruction)
     assert "Headline says the message is safe" in second_explainer_prompt  # code's issue
-    assert "Headline should mention the fake link." in second_explainer_prompt  # Critic's issue
+    assert "The headline says it is safe but the verdict is scam." in second_explainer_prompt  # Critic's wording
     assert result.case.critique.approved and result.case.critic_loops == 1
 
 
@@ -126,6 +126,26 @@ async def test_unconfirmed_rejection_does_not_cost_a_rewrite():
     assert len(llm.calls_for("explainer")) == 1
     assert result.case.critique.approved
     assert any("not confirmed" in e.reason for e in result.case.guardrail_events)
+
+
+async def test_critic_unsupported_claim_is_confirmed_by_code():
+    tagged = {"approved": False, "issues": ["[unsupported] There is no phone number in the message."]}
+    llm = fake(critic=[tagged, APPROVED], explainer=[INVENTS_NUMBER, EXPLANATION])
+    result = await analyse(MESSAGE, model=llm)
+
+    second_explainer_prompt = str(llm.calls_for("explainer")[1].config.system_instruction)
+    assert "message has none" in second_explainer_prompt
+    assert "There is no phone number in the message." in second_explainer_prompt
+    assert result.case.critique.approved
+
+
+async def test_passed_checks_listed_as_issues_are_ignored():
+    # the 3B Critic's habit: listing a check that passed
+    noisy = {"approved": False, "issues": ["The explanation does not contradict the verdict."]}
+    llm = fake(critic=[noisy])
+    result = await analyse(MESSAGE, model=llm)
+
+    assert len(llm.calls_for("explainer")) == 1 and result.case.critique.approved
 
 
 async def test_code_catches_a_contradiction_the_critic_missed():

@@ -75,8 +75,10 @@ EXPLANATION = {
     "what_to_do": ["Link par click mat karo.", "Share the OTP with the caller.", "1930 par report karo."],
 }
 APPROVED = {"approved": True, "issues": []}
-REJECTED = {"approved": False, "issues": ["Headline should mention the fake link."]}
+REJECTED = {"approved": False, "issues": ["[contradiction] The headline says it is safe but the verdict is scam."]}
 # A draft that contradicts a scam verdict, so the code check confirms the rejection.
 SAYS_SAFE = {**EXPLANATION, "headline": "This message is not a scam."}
+# A reason that invents a phone number the message does not contain.
+INVENTS_NUMBER = {**EXPLANATION, "why": ["They ask you to call a specific number."]}
 # Matches an "uncertain" verdict (NEEDS_MORE).
 HEDGED = {**EXPLANATION, "headline": "This may be a scam, be careful."}

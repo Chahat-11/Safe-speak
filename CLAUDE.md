@@ -60,7 +60,7 @@ Two capped loops, caps enforced in `before_agent` callbacks (not prompts):
 | `safespeak/guardrails/loop_caps.py` | before_agent caps: Router (Reasoner loop), Explainer (Critic loop); useless-loop skip |
 | `safespeak/guardrails/output_guard.py` | after_agent on Coordinator: safe advice, render, close |
 | `safespeak/guardrails/language_check.py` | Parser: language set by code; Explainer: reject wrong script |
-| `safespeak/guardrails/critique_check.py` | after_agent on Critic: only code-confirmed problems trigger a rewrite |
+| `safespeak/guardrails/critique_check.py` | after_agent on Critic: verifies the Critic's tagged issues in code |
 | `safespeak/guardrails/redaction.py` | OTP/card/account/Aadhaar masking regexes |
 | `safespeak/observability/tracer.py` | JSONL trace + RunMetrics |
 | `safespeak/evaluate.py` | Evaluation harness: N messages from a CSV -> results/*.csv |
@@ -113,14 +113,18 @@ Two capped loops, caps enforced in `before_agent` callbacks (not prompts):
   raises on Devanagari in a non-Hindi reply, so the one-retry rule fixes it
   instead of a Critic loop.
 
-## Critic grounding
+## Critic grounding ("the LLM Critic proposes, code confirms")
 
-- `ground_critique` (after_agent on Critic) sets the final CriticReview:
-  rejected only if a code check confirms a problem (`headline_issue`:
-  headline contradicts the verdict label). The Critic's own issues ride along
-  on a confirmed rejection; unconfirmed objections are approved and logged.
-- Why: qwen2.5:3b rejected every explanation on a dev sample with spurious
-  issues, so the Critic loop hit its cap on every message.
+- Critic tags each issue with the failed check: `[contradiction]`,
+  `[unsupported]`, `[vague]`, `[language]`, and must list only failures.
+- `ground_critique` (after_agent on Critic) verifies tags in code
+  (`code_checks`): `headline_issue` (headline vs verdict label) and
+  `unsupported_claims` (a "why" reason mentions a link / phone number the
+  message lacks). Code also runs both checks itself.
+- Rejected only if a check confirms a problem; the Explainer then gets the
+  code's finding + the Critic's wording. Unverifiable / untagged objections
+  are approved and logged as a GuardrailEvent.
+- Why: qwen2.5:3b listed passed checks as issues and approved nothing.
 
 ## MCP tools (exactly two; do not add more without asking)
 
