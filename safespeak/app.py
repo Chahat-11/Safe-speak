@@ -15,6 +15,7 @@ from google.adk.sessions import InMemorySessionService
 from google.genai import types
 from pydantic import BaseModel
 
+from safespeak.agents.architectures import ParallelCoordinator, SequentialCoordinator
 from safespeak.agents.coordinator import Coordinator, create_coordinator
 from safespeak.agents.critic import create_critic
 from safespeak.agents.explainer import create_explainer
@@ -42,9 +43,17 @@ class AnalysisResult(BaseModel):
     metrics: RunMetrics
 
 
-def build_root_agent(model=None) -> Coordinator:
+ARCHITECTURES = {
+    "hierarchical": Coordinator,
+    "sequential": SequentialCoordinator,
+    "parallel": ParallelCoordinator,
+}
+
+
+def build_root_agent(model=None, architecture: str = "hierarchical") -> Coordinator:
     """Wire the agent tree. `model` lets tests swap in a fake LLM."""
     return create_coordinator(
+        cls=ARCHITECTURES[architecture],
         parser=create_parser(model),
         router=create_router(),
         specialists=[create_verifier(model), create_pattern_specialist(), *create_stub_specialists()],
@@ -57,9 +66,10 @@ def build_root_agent(model=None) -> Coordinator:
 class SafeSpeakService:
     """Use as `async with SafeSpeakService() as svc: await svc.analyse(text)`."""
 
-    def __init__(self, model=None):
+    def __init__(self, model=None, architecture: str = "hierarchical"):
         self.sessions = InMemorySessionService()
-        self.runner = Runner(agent=build_root_agent(model), app_name=APP_NAME, session_service=self.sessions)
+        root = build_root_agent(model, architecture)
+        self.runner = Runner(agent=root, app_name=APP_NAME, session_service=self.sessions)
 
     async def __aenter__(self) -> "SafeSpeakService":
         return self
@@ -84,6 +94,6 @@ class SafeSpeakService:
         return AnalysisResult(markdown=markdown, case=case, metrics=metrics)
 
 
-async def analyse(text: str, model=None) -> AnalysisResult:
-    async with SafeSpeakService(model) as service:
+async def analyse(text: str, model=None, architecture: str = "hierarchical") -> AnalysisResult:
+    async with SafeSpeakService(model, architecture) as service:
         return await service.analyse(text)

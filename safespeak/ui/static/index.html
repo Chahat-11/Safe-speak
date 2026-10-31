@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SafeSpeak Run Monitor</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topline">
+    <strong class="product">SafeSpeak</strong>
+    <span class="health" id="health" role="status">Checking the local model</span>
+  </header>
+
+  <main class="app">
+    <section class="controls" aria-labelledby="h-message">
+      <h2 id="h-message"><label for="message">Is this message a scam?</label></h2>
+      <textarea id="message" rows="5" spellcheck="false" placeholder="Paste the suspicious message here"></textarea>
+      <div class="actions">
+        <button type="button" class="primary" id="run" disabled>Check message</button>
+        <button type="button" id="replay" disabled>Watch a recorded run</button>
+      </div>
+      <p class="hint" id="run-hint">Paste a message to begin.</p>
+      <p class="hint">The message stays on this computer. Secrets are hidden before any agent sees them.</p>
+
+      <fieldset class="segments">
+        <legend>How the agents work together</legend>
+        <div class="segment-row" id="architectures"></div>
+        <p class="hint" id="architecture-hint"></p>
+      </fieldset>
+    </section>
+
+    <section class="guardlog" aria-labelledby="h-guardlog">
+      <h2 id="h-guardlog">Safety checks</h2>
+      <ol class="log" id="guardlog"></ol>
+      <p class="hint" id="guardlog-empty">Nothing yet.</p>
+    </section>
+
+    <div class="centre" id="centre">
+      <p class="subject" id="subject" hidden><span class="muted" id="sheet-note"></span> <span id="subject-message"></span></p>
+      <p class="status" id="status" role="status">Paste a message and check it, or watch a recorded run.</p>
+
+      <section class="conclusion" id="conclusion" aria-labelledby="h-conclusion" hidden>
+        <h2 class="hidden-label" id="h-conclusion">The answer</h2>
+        <div id="conclusion-body"></div>
+      </section>
+
+      <section class="timeline" aria-labelledby="h-sheet">
+        <div class="sheet-head">
+          <h2 id="h-sheet">What the agents are doing</h2>
+          <p class="readout"><span id="elapsed">0.0 s</span> <span id="tokens"></span></p>
+        </div>
+        <p class="hint">Each row is an agent. Bars grow while it works. A second bar means it was sent back. Click a bar for details.</p>
+        <div class="sheet" id="sheet">
+          <div class="row axis-row">
+            <div class="row-label"></div>
+            <div class="axis" id="axis" aria-hidden="true"></div>
+          </div>
+          <div id="rows"></div>
+        </div>
+        <ul class="legend" id="legend" aria-label="Chart key">
+          <li data-kind="agent"><i class="key key-agent"></i>agent working</li>
+          <li data-kind="model"><i class="key key-model"></i>AI model thinking</li>
+          <li data-kind="tool"><i class="key key-tool"></i>website lookup</li>
+          <li data-kind="skip"><i class="key key-skip"></i>stopped by a safety check</li>
+          <li data-kind="failed"><i class="key key-failed"></i>did not finish</li>
+        </ul>
+      </section>
+    </div>
+
+    <div class="right" id="right">
+      <section class="details" id="details" aria-labelledby="h-inspector" hidden>
+        <div class="details-head">
+          <h2 id="h-inspector">Details</h2>
+          <button type="button" class="link" id="details-close">Close</button>
+        </div>
+        <div id="inspector-body"></div>
+      </section>
+
+      <section class="case" aria-labelledby="h-case">
+        <h2 id="h-case">What the agents have found</h2>
+        <p class="hint">The shared case file. Agents only talk to each other through it.</p>
+        <p class="hint" id="case-empty">Nothing yet. Findings appear here as the agents work.</p>
+        <div id="case-form"></div>
+        <button type="button" class="link" id="technical-toggle" aria-expanded="false">Show technical fields</button>
+        <div id="case-technical" hidden></div>
+      </section>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

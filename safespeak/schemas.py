@@ -18,6 +18,7 @@ Layout of this file follows the pipeline:
   9. agent inputs    -> ParserInput, VerifierInput, ReasonerInput,
                        ExplainerInput, CriticInput
  10. observability   -> AgentMetrics, RunMetrics
+ 11. offline crews   -> PatternProposal(s), ProposalEvidence, TraceSummary, TraceAudit
 """
 
 from __future__ import annotations
@@ -349,3 +350,56 @@ class RunMetrics(Strict):
     @property
     def total_tokens(self) -> int:
         return sum(a.prompt_tokens + a.completion_tokens for a in self.agents)
+
+
+# --------------------------------------------------------------------------
+# 11. Offline CrewAI crews
+# --------------------------------------------------------------------------
+
+
+class MissedScams(Strict):
+    """Pattern Mining crew input: dev scams the catalogue does not catch."""
+
+    messages: list[str]
+
+
+class PatternProposal(Strict):
+    """A candidate catalogue rule. Every group must match; phrases in a group are alternatives."""
+
+    name: str
+    tactic: str = Field(description="The trick the scammer is using, in one sentence")
+    cue_groups: list[list[str]] = Field(min_length=2, description="At least two groups of short phrases")
+
+
+class PatternProposals(Strict):
+    proposals: list[PatternProposal] = Field(default_factory=list)
+
+
+class ProposalEvidence(Strict):
+    """A proposal plus what code measured. A human decides whether to adopt it."""
+
+    proposal: PatternProposal
+    scam_hits: int
+    scam_total: int
+    false_alarms: int
+    legit_total: int
+
+
+class AgentTraceStats(Strict):
+    agent: str
+    calls: int
+    mean_duration_ms: float
+    mean_tokens: float
+
+
+class TraceSummary(Strict):
+    """Trace Audit crew input: numbers only, never message text."""
+
+    runs: int
+    agents: list[AgentTraceStats] = Field(default_factory=list)
+    guardrail_counts: dict[str, int] = Field(default_factory=dict)
+
+
+class TraceAudit(Strict):
+    findings: list[str] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)

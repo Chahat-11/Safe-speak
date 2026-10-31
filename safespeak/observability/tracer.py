@@ -14,7 +14,7 @@ import json
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from google.adk.agents.callback_context import CallbackContext
 from google.adk.models.llm_request import LlmRequest
@@ -34,6 +34,48 @@ class Tracer:
         self._case_before: dict[tuple, dict] = {}
         self._prompts: dict[tuple, str] = {}
         self._metrics: dict[str, dict[str, AgentMetrics]] = {}
+        self.listeners: list[Callable[[dict], None]] = []  # live subscribers (the UI)
+
+    # ---- live events -----------------------------------------------------
+
+    def _emit(self, event: str, ctx: CallbackContext, *, name: str | None = None, **fields: Any) -> None:
+        """Tell live subscribers what just happened. The case is already masked."""
+        if not self.listeners:
+            return
+        record = {"event": event, "name": name or ctx.agent_name, "t": round(time.time() * 1000),
+                  "case": ctx.state.get(CASE_KEY), **fields}
+        for listener in self.listeners:
+            listener(record)
+
+    def guarded(self, guard: Callable) -> Callable:
+        """Wrap a before_agent guardrail so a skipped agent is visible and timed out."""
+
+        def callback(callback_context: CallbackContext):
+            result = guard(callback_context)
+            if result is not None:
+                self._forget("agent", callback_context)
+                self._emit("agent_skipped", callback_context, guard=guard.__name__)
+            return result
+
+        return callback
+
+    def guarded_model(self, guard: Callable) -> Callable:
+        """Same for a before_model guardrail that answers instead of the LLM."""
+
+        def callback(callback_context: CallbackContext, llm_request: LlmRequest):
+            result = guard(callback_context, llm_request)
+            if result is not None:
+                self._forget("model", callback_context)
+                self._emit("model_skipped", callback_context, guard=guard.__name__)
+            return result
+
+        return callback
+
+    def _forget(self, kind: str, ctx: CallbackContext) -> None:
+        key = (kind, ctx.invocation_id, ctx.agent_name)
+        self._starts.pop(key, None)
+        self._case_before.pop(key, None)
+        self._prompts.pop(key, None)
 
     # ---- agent callbacks -------------------------------------------------
 
@@ -41,6 +83,7 @@ class Tracer:
         key = ("agent", callback_context.invocation_id, callback_context.agent_name)
         self._starts[key] = time.perf_counter()
         self._case_before[key] = dict(callback_context.state.get(CASE_KEY) or {})
+        self._emit("agent_start", callback_context)
 
     def after_agent(self, callback_context: CallbackContext) -> None:
         key = ("agent", callback_context.invocation_id, callback_context.agent_name)
@@ -56,6 +99,7 @@ class Tracer:
             input={"status": before.get("status")},
             output=_changed_sections(before, after),
         )
+        self._emit("agent_end", callback_context, duration_ms=duration, wrote=sorted(_changed_sections(before, after)))
 
     # ---- model callbacks -------------------------------------------------
 
@@ -63,11 +107,13 @@ class Tracer:
         key = ("model", callback_context.invocation_id, callback_context.agent_name)
         self._starts[key] = time.perf_counter()
         self._prompts[key] = _truncate(str(llm_request.config.system_instruction))
+        self._emit("model_start", callback_context)
 
     def after_model(self, callback_context: CallbackContext, llm_response: LlmResponse) -> None:
         key = ("model", callback_context.invocation_id, callback_context.agent_name)
         duration = self._elapsed_ms(key)
         prompt_tokens, completion_tokens = _tokens(llm_response)
+        prompt = self._prompts.get(key, "")
         metrics = self._agent_metrics(callback_context)
         metrics.model_calls += 1
         metrics.prompt_tokens += prompt_tokens
@@ -82,16 +128,21 @@ class Tracer:
             output=_truncate(_response_text(llm_response)),
             error=llm_response.error_message,
         )
+        self._emit("model_end", callback_context, duration_ms=duration, prompt_tokens=prompt_tokens,
+                   completion_tokens=completion_tokens, prompt=prompt, reply=_truncate(_response_text(llm_response)))
 
     # ---- tool callbacks (used once MCP tools are attached) ---------------
 
     def before_tool(self, tool: Any, args: dict, tool_context: CallbackContext) -> None:
         self._starts[("tool", tool_context.invocation_id, tool.name)] = time.perf_counter()
+        self._emit("tool_start", tool_context, tool=tool.name, args=args)
 
     def after_tool(self, tool: Any, args: dict, tool_context: CallbackContext, tool_response: Any) -> None:
         duration = self._elapsed_ms(("tool", tool_context.invocation_id, tool.name))
         self.write(kind="tool", ctx=tool_context, name=tool.name, duration_ms=duration,
                    input=args, output=tool_response)
+        finding = tool_response.get("structuredContent") if isinstance(tool_response, dict) else None
+        self._emit("tool_end", tool_context, tool=tool.name, args=args, duration_ms=duration, finding=finding)
 
     # ---- run summary -----------------------------------------------------
 

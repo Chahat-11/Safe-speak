@@ -1,0 +1,74 @@
+[
+{
+  "proposal": {
+    "name": "Legal Threats and Urgency",
+    "tactic": "Threatening legal consequences and creating urgency",
+    "cue_groups": [
+      [
+        "pay now",
+        "update settings",
+        "reactivate",
+        "avoid penalty"
+      ],
+      [
+        "legal action",
+        "account suspension",
+        "legal consequences",
+        "act immediately"
+      ]
+    ]
+  },
+  "scam_hits": 5,
+  "scam_total": 1372,
+  "false_alarms": 0,
+  "legit_total": 4798
+},
+{
+  "proposal": {
+    "name": "Suspicious Links and Urgency",
+    "tactic": "Link manipulation to create urgency and risk",
+    "cue_groups": [
+      [
+        "download attached",
+        "visit website",
+        "update KYC",
+        "reactivate account"
+      ],
+      [
+        "malicious link",
+        "suspicious website",
+        "immediate action required",
+        "legal action"
+      ]
+    ]
+  },
+  "scam_hits": 0,
+  "scam_total": 1372,
+  "false_alarms": 0,
+  "legit_total": 4798
+},
+{
+  "proposal": {
+    "name": "Urgency and Time Pressure",
+    "tactic": "Creating a sense of urgency to prompt quick action",
+    "cue_groups": [
+      [
+        "pay now",
+        "reactivate account",
+        "update settings",
+        "avoid penalty"
+      ],
+      [
+        "legal action",
+        "account suspension",
+        "legal consequences",
+        "act immediately"
+      ]
+    ]
+  },
+  "scam_hits": 5,
+  "scam_total": 1372,
+  "false_alarms": 0,
+  "legit_total": 4798
+}
+]

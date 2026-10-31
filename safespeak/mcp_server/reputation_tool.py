@@ -105,7 +105,10 @@ def _load_feed(name: str) -> set[str] | None:
 def _host_of(line: str) -> str:
     """Feeds mix full URLs and bare hosts; reduce both to a lowercase host."""
     line = line.strip().lower()
-    host = urlparse(line).hostname if "://" in line else line
+    try:
+        host = urlparse(line).hostname if "://" in line else line
+    except ValueError:  # a malformed feed line must not break the whole tool
+        return ""
     return (host or "").removeprefix("www.")
 
 

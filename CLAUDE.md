@@ -68,7 +68,13 @@ Two capped loops, caps enforced in `before_agent` callbacks (not prompts):
 | `safespeak/mcp_server/whois_tool.py` | Tool 1: domain age via RDAP (WHOIS successor) |
 | `safespeak/mcp_server/reputation_tool.py` | Tool 2: OpenPhish + Phishing.Database blocklists, brand lookalike |
 | `safespeak/mcp_server/{domains,cache}.py` | Domain parsing (offline suffix list), TTL file cache |
-| `safespeak/crews/` | CrewAI offline crews (later pass) |
+| `safespeak/agents/architectures.py` | Sequential and parallel baselines for the comparison |
+| `safespeak/agents/pattern_matcher.py` | Pure matching logic, no ADK (both venvs use it) |
+| `safespeak/report.py` | Metrics tables from results CSVs (precision, recall, F1, CI, latency) |
+| `safespeak/crews/` | CrewAI offline crews, own venv: Pattern Mining, Trace Audit |
+| `safespeak/ui/` | Local run monitor: Starlette SSE server + plain JS page in `static/` |
+| `scripts/run_benchmark.sh` | All reporting runs; resumes if interrupted |
+| `scripts/record_ui_sample.py` | Records a run for the monitor's Replay button (made-up messages only) |
 | `scripts/pattern_coverage.py` | Dev-only: pattern hit rates on dev + hard negatives (refuses test_real) |
 | `data/` | Datasets (see Data rules); `data/cache/` = tool cache (git-ignored) |
 | `tests/` | pytest; `fake_llm.py` scripted model, `conftest.py` offline tool cache |
@@ -169,6 +175,27 @@ Two capped loops, caps enforced in `before_agent` callbacks (not prompts):
 - Results CSVs never contain message text.
 - Known gaps: no Hinglish test data; hard negatives synthetic; no RAG corpus.
 
+## Architectures
+
+Same agents, blackboard and guardrails; only control flow differs (`--architecture`):
+hierarchical (runtime routing + both loops), sequential and parallel (all four
+specialists, one Critic pass, no loops). Parallel saves events in write order
+because each write replaces the whole case.
+
+## CrewAI crews (offline, separate venv)
+
+CrewAI needs older mcp/pydantic than the live service, so it has `.venv-crews`
+(`requirements-crews.txt`). Telemetry off, local Ollama only. Code computes all
+numbers (`crews/data.py`, tested in the main venv); crews only interpret. They
+refuse test_real.csv and see trace counts, never guardrail text. Pattern Mining
+output goes to `data/proposed_patterns.json` for human review, never auto-merged.
+
+## Run monitor
+
+Binds to 127.0.0.1. It only listens to `tracer.listeners` so it cannot change
+agent behaviour. Guardrails are wrapped in `tracer.guarded` so skips are visible.
+UI text uses textContent only, since message and LLM text are untrusted.
+
 ## Tracing
 
 `logs/trace.jsonl`, one record per agent/model/tool call plus one `run`
@@ -191,8 +218,9 @@ stops later callbacks).
 - [x] Reasoner sees the masked message + `specialists_already_run`; prompt
       weighs evidence explicitly ("no findings" is not "uncertain")
 - [x] Verifier skips loop-backs when its domains were already checked
-- [ ] Phase 3 (deferred, do not start): CrewAI crews, A2A, cloud deploy,
-      architecture comparison, 40-run benchmark
+- [x] CrewAI offline crews, architecture baselines, metrics report, run monitor
+- [ ] Reporting runs finished and written up (`scripts/run_benchmark.sh`)
+- [ ] Last evaluation (deferred, do not start): A2A, cloud deployment
 
 ## Commands
 
@@ -204,6 +232,11 @@ ollama pull qwen2.5:3b      # default model (fits 8 GB RAM); larger: SAFESPEAK_M
 .venv/bin/python -m safespeak --json "your message here"   # CaseRecord as JSON
 .venv/bin/python -m safespeak.evaluate --file data/dev_synthetic.csv --n 10
 .venv/bin/python -m safespeak.mcp_server      # run the MCP server alone (stdio)
+.venv/bin/python -m safespeak.ui              # run monitor: http://127.0.0.1:8765
+scripts/run_benchmark.sh                      # reporting runs, resumable
+.venv/bin/python -m safespeak.report results/test_real_hierarchical_n463_seed0 --out docs/evaluation.md
+python3.12 -m venv .venv-crews && .venv-crews/bin/pip install -r requirements-crews.txt
+.venv-crews/bin/python -m safespeak.crews patterns   # or: audit
 ```
 
 ## Code style

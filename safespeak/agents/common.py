@@ -30,7 +30,9 @@ from safespeak.schemas import CaseRecord, CaseStatus
 
 def local_model() -> LiteLlm:
     """The Ollama model every LLM agent uses (nothing leaves this machine)."""
-    return LiteLlm(model=config.MODEL, api_base=config.OLLAMA_API_BASE)
+    # temperature 0: the same message should get the same answer, so that
+    # evaluation runs and viva demos are repeatable.
+    return LiteLlm(model=config.MODEL, api_base=config.OLLAMA_API_BASE, temperature=0)
 
 
 def trace_callbacks() -> dict:
@@ -110,9 +112,9 @@ def llm_callbacks(*, guards=None, after_agent=None, after_tool=None, model_guard
     model_guards -> before_model, after tracing starts (may answer instead of the LLM)
     """
     return {
-        "before_agent_callback": [tracer.before_agent, *(guards or [])],
+        "before_agent_callback": [tracer.before_agent, *map(tracer.guarded, guards or [])],
         "after_agent_callback": [*(after_agent or []), tracer.after_agent],
-        "before_model_callback": [isolate_llm_request, tracer.before_model, *(model_guards or [])],
+        "before_model_callback": [isolate_llm_request, tracer.before_model, *map(tracer.guarded_model, model_guards or [])],
         "after_model_callback": [tracer.after_model],
         "before_tool_callback": [tracer.before_tool],
         "after_tool_callback": [*(after_tool or []), tracer.after_tool],

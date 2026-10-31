@@ -167,4 +167,7 @@ def _host(item: str) -> str:
         return item.rsplit("@", 1)[1]
     if "://" not in item:
         item = "http://" + item
-    return (urlparse(item).hostname or "").removeprefix("www.")
+    try:
+        return (urlparse(item).hostname or "").removeprefix("www.")
+    except ValueError:  # e.g. "[Link]": brackets read as a malformed IPv6 address
+        return ""

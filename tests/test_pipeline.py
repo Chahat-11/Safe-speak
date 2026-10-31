@@ -278,3 +278,35 @@ async def test_verifier_turn_budget():
     assert len(llm.calls_for("verifier")) == 4  # budget = 2 x 1 domain + 2
     assert any("turn budget" in e.reason for e in result.case.guardrail_events)
     assert {f.result for f in result.case.verifier_findings} == {CheckResult.UNKNOWN}
+
+
+@pytest.mark.parametrize("architecture", ["sequential", "parallel"])
+async def test_baselines_gather_all_evidence_without_reflection(architecture):
+    # The Reasoner asks for more and the Critic rejects: baselines must not loop.
+    llm = fake(reasoner=[NEEDS_MORE], explainer=[SAYS_SAFE], critic=[REJECTED])
+    result = await analyse(MESSAGE, model=llm, architecture=architecture)
+
+    assert len(llm.calls_for("reasoner")) == 1 and len(llm.calls_for("explainer")) == 1
+    assert result.case.status == CaseStatus.CLOSED and result.markdown
+    assert {f.check for f in result.case.verifier_findings} == {"domain_age", "reputation"}  # verifier ran
+    assert "credential_request" in {m.pattern_id for m in result.case.pattern_matches}  # pattern kept too
+    assert result.case.correlation is not None  # stub ran too
+    assert {s.value for s in result.case.routing.specialists} == {"verifier", "pattern", "retrieval", "correlation"}
+
+
+async def test_baselines_run_all_specialists_where_hierarchical_routes():
+    no_links = {**PARSED, "urls": []}
+    hierarchical = await analyse("You won a prize, contact us", model=fake(parser=[no_links]))
+    assert {s.value for s in hierarchical.case.routing.specialists} == {"pattern", "retrieval"}
+
+    sequential = await analyse("You won a prize, contact us", model=fake(parser=[no_links]), architecture="sequential")
+    assert len(sequential.case.routing.specialists) == 4
+
+
+async def test_malformed_url_from_parser_does_not_crash_the_run():
+    parsed = {**PARSED, "urls": ["[Link]", "http://[bad"]}
+    llm = fake(parser=[parsed])
+    result = await analyse(MESSAGE, model=llm)
+
+    assert result.case.status == CaseStatus.CLOSED
+    assert llm.calls_for("verifier") == []  # nothing domain-shaped to check

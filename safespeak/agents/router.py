@@ -50,6 +50,6 @@ def create_router() -> Router:
     return Router(
         name="router",
         # Useless-loop check first, so a skipped loop does not use up the cap.
-        before_agent_callback=[tracer.before_agent, skip_useless_loop_back, cap_reasoner_loops],
+        before_agent_callback=[tracer.before_agent, tracer.guarded(skip_useless_loop_back), tracer.guarded(cap_reasoner_loops)],
         after_agent_callback=[tracer.after_agent],
     )

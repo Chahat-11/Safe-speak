@@ -116,8 +116,9 @@ def _log_invalid_output(agent_name: str, err: Exception, gave_up: bool):
     return lambda state: log_guardrail(state, "agent", action, reason)
 
 
-def create_coordinator(*, parser, router, specialists, reasoner, explainer, critic) -> Coordinator:
-    return Coordinator(
+def create_coordinator(*, parser, router, specialists, reasoner, explainer, critic, cls=None) -> Coordinator:
+    """`cls` picks the orchestration; see agents/architectures.py for the baselines."""
+    return (cls or Coordinator)(
         name="coordinator",
         parser=parser,
         router=router,
@@ -128,6 +129,6 @@ def create_coordinator(*, parser, router, specialists, reasoner, explainer, crit
         sub_agents=[parser, router, *specialists, reasoner, explainer, critic],
         # Order matters: tracing first, then guardrails (a guardrail that
         # returns content stops the callbacks after it).
-        before_agent_callback=[tracer.before_agent, input_guardrail],
+        before_agent_callback=[tracer.before_agent, tracer.guarded(input_guardrail)],
         after_agent_callback=[tracer.after_agent, output_guardrail],
     )

@@ -1,0 +1,3 @@
+# Offline crews only. Separate venv: CrewAI needs older mcp/pydantic than the live service.
+# python3.12 -m venv .venv-crews && .venv-crews/bin/pip install -r requirements-crews.txt
+crewai==1.15.33
