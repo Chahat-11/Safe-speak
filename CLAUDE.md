@@ -185,7 +185,7 @@ stops later callbacks).
 ```bash
 python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m pytest -q            # offline, uses tests/fake_llm.py
-ollama pull qwen3:8b        # default model; override with SAFESPEAK_MODEL=ollama_chat/qwen2.5:7b
+ollama pull qwen2.5:3b      # default model (fits 8 GB RAM); larger: SAFESPEAK_MODEL=ollama_chat/qwen2.5:7b
 .venv/bin/python -m safespeak "your message here"
 .venv/bin/python -m safespeak --json "your message here"   # CaseRecord as JSON
 .venv/bin/python -m safespeak.evaluate --file data/dev_synthetic.csv --n 10

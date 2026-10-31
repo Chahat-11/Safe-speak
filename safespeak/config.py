@@ -4,7 +4,8 @@ import os
 from pathlib import Path
 
 # Any LiteLLM model string; "ollama_chat/..." keeps everything on this machine.
-MODEL = os.getenv("SAFESPEAK_MODEL", "ollama_chat/qwen3:8b")
+# 3B by default: a 7-8B model (~5 GB) makes an 8 GB M1 swap and freeze.
+MODEL = os.getenv("SAFESPEAK_MODEL", "ollama_chat/qwen2.5:3b")
 OLLAMA_API_BASE = os.getenv("OLLAMA_API_BASE", "http://localhost:11434")
 
 LOG_PATH = Path(os.getenv("SAFESPEAK_LOG_PATH", "logs/trace.jsonl"))
