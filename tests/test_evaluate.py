@@ -49,6 +49,22 @@ async def test_resume_skips_finished_rows_and_saves_as_it_goes(tmp_path):
     assert len(read_rows(tmp_path / "run_messages.csv")) == 2
 
 
+async def test_resume_retries_rows_that_failed(tmp_path):
+    data = tmp_path / "mini.csv"
+    _csv(data, [{"message_text": "   ", "label": "scam", "archetype": "a"},
+                {"message_text": "  ", "label": "legitimate", "archetype": "b"}])
+    stem = tmp_path / "run"
+    await evaluate(data, n=2, seed=0, model=FakeLlm(script={}, requests=[]), run_stem=stem)
+    saved = read_rows(tmp_path / "run_messages.csv")
+    saved[0]["error"] = "APIConnectionError: Ollama down"
+    write_csv(tmp_path / "run_messages.csv", MESSAGE_COLUMNS, saved)
+
+    second, _ = await evaluate(data, n=2, seed=0, model=FakeLlm(script={}, requests=[]), run_stem=stem)
+
+    assert len(second) == 2 and not any(row["error"] for row in second)
+    assert not any(row["error"] for row in read_rows(tmp_path / "run_messages.csv"))
+
+
 def test_sample_keeps_label_balance_and_is_repeatable(tmp_path):
     data = tmp_path / "mini.csv"
     _csv(data, [{"message_text": str(i), "label": "scam" if i < 30 else "legitimate", "archetype": "a"} for i in range(40)])

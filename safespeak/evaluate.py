@@ -10,6 +10,7 @@ Writes to results/ (message text is never written):
   <run>_manifest.json: model, architecture, git commit, for reproducibility
 <run> = <file>_<architecture>_n<n>_seed<seed>. Rows are saved as they finish
 and a rerun of the same <run> resumes, so a long run survives interruption.
+Rows that failed are retried on the rerun; finished rows are never run twice.
 The sample keeps the file's scam/legitimate balance, so the same n and seed
 give every architecture the same messages. Tables: python -m safespeak.report
 
@@ -104,7 +105,7 @@ async def evaluate(
     path: Path, n: int, seed: int, model=None, architecture: str = "hierarchical", run_stem: Path | None = None
 ) -> tuple[list[dict], list[dict]]:
     """Run the sample. With `run_stem`, save each row at once and skip finished ones."""
-    messages = read_rows(_messages_path(run_stem)) if run_stem else []
+    messages = _forget_errors(run_stem) if run_stem else []
     agents = read_rows(_agents_path(run_stem)) if run_stem else []
     finished = {int(m["row"]) for m in messages}
     sample = sample_rows(path, n, seed)
@@ -129,6 +130,16 @@ async def evaluate(
             print(f"[{i}/{len(sample)}] row {row_no}: {row.get('predicted', 'ERROR')} "
                   f"(truth {truth['label']}) {wall_ms / 1000:.1f}s", flush=True)
     return messages, agents
+
+
+def _forget_errors(stem: Path) -> list[dict]:
+    """Saved rows without errors. A failed row (e.g. Ollama went down) is not finished, so it runs again."""
+    path = _messages_path(stem)
+    saved = read_rows(path)
+    kept = [row for row in saved if not row["error"]]
+    if len(kept) < len(saved):
+        write_csv(path, MESSAGE_COLUMNS, kept)
+    return kept
 
 
 def _messages_path(stem: Path) -> Path:
