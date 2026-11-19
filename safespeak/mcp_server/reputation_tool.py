@@ -12,6 +12,8 @@ Lookalike: the domain contains a brand name (e.g. "sbi") but is not one of
 that brand's official domains. Keyword match, so it can misfire (e.g.
 "taxis" contains "axis"); that is why it gives "suspicious", not "malicious".
 Not on a blocklist does NOT mean safe; the detail text says so.
+A link shortener (bit.ly, tinyurl ...) is reported "unknown", never "clean":
+the real destination is hidden, so the check cannot vouch for it.
 """
 
 from urllib.parse import urlparse
@@ -20,7 +22,7 @@ import httpx
 
 from safespeak import config
 from safespeak.mcp_server.cache import cache_path, is_fresh
-from safespeak.mcp_server.domains import Domain, parse_domain
+from safespeak.mcp_server.domains import Domain, is_shortener, parse_domain
 from safespeak.schemas import CheckResult, VerifierFinding
 
 FEEDS = {
@@ -57,6 +59,8 @@ def domain_reputation(indicator: str) -> VerifierFinding:
     if brand:
         detail = f"{domain.host} uses the name '{brand}' but is not an official {brand} domain."
         return _finding(indicator, CheckResult.SUSPICIOUS, detail)
+    if is_shortener(domain):
+        return _finding(indicator, CheckResult.UNKNOWN, f"{domain.host} is a link shortener that hides the real destination.")
     if failed == len(FEEDS):
         return _finding(indicator, CheckResult.UNKNOWN, "Blocklists could not be loaded.")
     return _finding(indicator, CheckResult.CLEAN, f"{domain.host} not on {len(FEEDS) - failed} blocklist(s); this does not prove it is safe.")

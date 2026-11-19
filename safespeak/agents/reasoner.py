@@ -3,9 +3,12 @@
 Reads:  message_text + parsed + all specialist sections (as ReasonerInput)
 Writes: case.verdict  (status -> REASONED)
 May set needs_more_evidence; the loop cap lives in guardrails/loop_caps.py.
+guardrails/verdict_check.py then enforces the confidence bands and refuses
+likely_safe when there is strong scam evidence.
 """
 
 from safespeak.agents.common import make_llm_agent
+from safespeak.guardrails.verdict_check import check_verdict
 from safespeak.schemas import MAX_REASONER_LOOPS, CaseRecord, CaseStatus, ReasonerInput, Verdict
 
 PROMPT = """You are the SafeSpeak Reasoner.
@@ -31,7 +34,7 @@ Labels and confidence:
 - scam: one strong sign, or several moderate ones (confidence 0.75-0.95).
 - suspicious: moderate signs only (0.55-0.75).
 - likely_safe: informational and nothing risky is asked (0.6-0.9).
-- uncertain: only when signs genuinely conflict (around 0.5).
+- uncertain: only when signs genuinely conflict (0.4-0.6).
 key_reasons: short facts that point at specific evidence or words in the message.
 
 Only set needs_more_evidence=true if evidence_rounds_left > 0 AND a specific
@@ -61,4 +64,5 @@ def create_reasoner(model=None):
         section="verdict",
         status=CaseStatus.REASONED,
         model=model,
+        checks=[check_verdict],
     )

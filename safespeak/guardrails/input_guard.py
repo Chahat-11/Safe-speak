@@ -4,7 +4,9 @@ Runs before any agent sees the message. It:
   1. blocks empty or oversized messages,
   2. masks secrets (OTP, card, account, Aadhaar) so raw values are never stored,
   3. flags prompt-injection phrases (logged, not blocked: scammers use them too,
-     and agents only ever see the message as JSON data, never as instructions).
+     and agents only ever see the message as JSON data, never as instructions),
+  4. flags abusive language (logged, not blocked: abuse is not a scam, but the
+     record should show it was noticed).
 The result is a GuardedInput in state; the Coordinator opens the case from it.
 """
 
@@ -20,7 +22,16 @@ from safespeak.schemas import GuardedInput, GuardrailEvent
 GUARDED_INPUT_KEY = "guarded_input"
 
 _INJECTION = re.compile(
-    r"(?i)ignore (all |any )?(previous|prior|above) instructions|system prompt|you are now"
+    r"(?i)\b(?:ignore|disregard|forget|override|bypass)\s+(?:all|any|the|your|my|previous|prior|above|these|those)\b"
+    r".{0,20}\b(?:instructions?|rules|prompt|above|guidelines)\b"
+    r"|system prompt|you are now|^\s*(?:system|assistant)\s*:"
+    r"|\b(?:mark|classify|label|treat|report|flag)\s+(?:this|it|the message|me)\s+as\s+(?:safe|legit\w*|genuine|not (?:a )?scam)"
+)
+# Common English and Hinglish abuse. Matched after squeezing repeated letters
+# ("chooottt" -> "chot"), the usual way people dodge word filters.
+_ABUSE = re.compile(
+    r"\b(?:f[u*]ck\w*|bitch\w*|bastard|slut|whore|asshole|nig(?:a|ah|as)?|chutiy\w*|madarchod|bh?enchod"
+    r"|bhosd\w*|gand|gandu|randi|harami|kamin[ae])\b|\bma+ ?ki+ ?cho?t"
 )
 
 
@@ -38,7 +49,14 @@ def check_input(text: str) -> GuardedInput:
         events.append(_event("redacted", f"Masked: {', '.join(sorted(set(found)))}"))
     if _INJECTION.search(text):
         events.append(_event("flagged", "Contains prompt-injection phrasing."))
+    if _ABUSE.search(_squeeze(text)):
+        events.append(_event("flagged", "Contains abusive language."))
     return GuardedInput(text=masked, events=events)
+
+
+def _squeeze(text: str) -> str:
+    """Lower-case and collapse repeated letters: 'Chooottt' -> 'chot'."""
+    return re.sub(r"(.)\1+", r"\1", text.lower())
 
 
 def input_guardrail(callback_context: CallbackContext) -> types.Content | None:

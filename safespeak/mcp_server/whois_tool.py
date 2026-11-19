@@ -12,7 +12,7 @@ import httpx
 
 from safespeak import config
 from safespeak.mcp_server.cache import cache_path, is_fresh
-from safespeak.mcp_server.domains import parse_domain
+from safespeak.mcp_server.domains import is_shortener, parse_domain
 from safespeak.schemas import CheckResult, VerifierFinding
 
 RDAP_URL = "https://rdap.org/domain/{domain}"
@@ -23,6 +23,8 @@ def domain_age(indicator: str) -> VerifierFinding:
     domain = parse_domain(indicator)
     if domain is None:
         return _finding(indicator, CheckResult.UNKNOWN, "Not a domain name.")
+    if is_shortener(domain):
+        return _finding(indicator, CheckResult.UNKNOWN, f"{domain.registrable} is a link shortener; its age says nothing about the real site.")
     try:
         record = _rdap_record(domain.registrable)
     except httpx.HTTPError as err:

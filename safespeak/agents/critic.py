@@ -17,8 +17,8 @@ from safespeak.schemas import CaseRecord, CaseStatus, CriticInput, CriticReview
 PROMPT = """You are the SafeSpeak Critic. Check the explanation against the
 verdict and the parsed message. Run these checks:
 
-1. contradiction: the headline says the opposite of verdict.label (e.g. "not a
-   scam" when the label is scam), or sounds certain when the label is uncertain.
+1. contradiction: the headline says the opposite of the verdict, or sounds
+   certain when the label is uncertain.
 2. unsupported: a "why" reason states something the message does not contain
    (e.g. mentions a link or a phone number that is not in the message).
 3. vague: a "what_to_do" step is too vague to act on.

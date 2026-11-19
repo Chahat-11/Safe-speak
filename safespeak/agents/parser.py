@@ -3,11 +3,13 @@
 Reads:  case.message_text  (as ParserInput)
 Writes: case.parsed        (status -> PARSED)
 It extracts facts only; judging is the Reasoner's job.
-`language` is checked in code afterwards (guardrails/language_check.py).
+`language` is checked in code afterwards (guardrails/language_check.py), and
+every extracted fact must appear in the message (guardrails/parse_check.py).
 """
 
 from safespeak.agents.common import make_llm_agent
 from safespeak.guardrails.language_check import correct_language
+from safespeak.guardrails.parse_check import ground_parsed
 from safespeak.schemas import CaseRecord, CaseStatus, ParsedMessage, ParserInput
 
 PROMPT = """You are the SafeSpeak Parser.
@@ -31,5 +33,5 @@ def create_parser(model=None):
         section="parsed",
         status=CaseStatus.PARSED,
         model=model,
-        checks=[correct_language],
+        checks=[correct_language, ground_parsed],
     )

@@ -32,3 +32,15 @@ def parse_domain(indicator: str) -> Domain | None:
     if not parts.suffix or not parts.domain:
         return None
     return Domain(host=parts.fqdn.removeprefix("www."), registrable=f"{parts.domain}.{parts.suffix}")
+
+
+# Link shorteners: the domain says nothing about where the link really goes,
+# so its age and reputation must not be reported as "clean".
+SHORTENERS = {
+    "bit.ly", "bitly.com", "tinyurl.com", "goo.gl", "t.co", "cutt.ly", "rb.gy", "is.gd", "ow.ly",
+    "shorturl.at", "tiny.cc", "rebrand.ly", "t.ly", "shorte.st", "v.gd", "s.id", "short.gy",
+}
+
+
+def is_shortener(domain: Domain) -> bool:
+    return domain.registrable in SHORTENERS

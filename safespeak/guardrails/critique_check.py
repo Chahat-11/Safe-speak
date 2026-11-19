@@ -16,6 +16,9 @@ the tag before it can trigger a rewrite:
                      (negated reasons like "no links" are skipped)
 
 Code also runs both checks itself, so it catches what the Critic missed.
+An "issue" that just repeats the checklist (it names verdict.label, or quotes
+the prompt's "e.g." wording) is an echo, not a review: it is set aside and
+logged as such, so the safety log is not filled with fake objections.
 Final CriticReview: rejected only if a check confirms a problem; its issues
 are the code's finding plus the Critic's wording for that check. Unconfirmed
 or untagged objections are approved and logged as a GuardrailEvent.
@@ -46,6 +49,8 @@ _NEGATED = re.compile(r"(?i)\b(?:no|not|never|without|none|doesn'?t|isn'?t|aren'
 _HAS_NUMBER = re.compile(r"\d[\d\s-]{6,}\d|\[number\]|X{4,}", re.IGNORECASE)
 
 _TAG = re.compile(r"^\s*\[(\w+)\]\s*(.*)$")
+# Wording that only appears when the model copies its own instructions back.
+_ECHO = re.compile(r"(?i)verdict\.label|parsed\.language|\be\.g\.|the headline says the opposite of")
 
 
 def headline_issue(verdict: Verdict, headline: str) -> str | None:
@@ -99,10 +104,14 @@ def ground_critique(callback_context: CallbackContext) -> None:
     ]
     unconfirmed = [i for tag, items in llm_tagged.items() if not found.get(tag) for i in items]
     unconfirmed += llm_tagged.get("", [])
+    echoes = [i for i in unconfirmed if _ECHO.search(i)]
+    unconfirmed = [i for i in unconfirmed if not _ECHO.search(i)]
 
     post(state, "critique", CriticReview(approved=not confirmed, issues=confirmed))
     if unconfirmed:
         log_guardrail(state, "agent", "replaced", "Critic issues not confirmed by checks: " + "; ".join(unconfirmed)[:300])
+    if echoes:
+        log_guardrail(state, "agent", "flagged", "Critic repeated its checklist instead of reviewing; ignored.")
 
 
 def _tagged_issues(critique: CriticReview) -> dict[str, list[str]]:
