@@ -9,5 +9,5 @@ from safespeak import config
 from safespeak.ui.server import app
 
 if warning := config.exposure_warning(config.UI_HOST):
-    print(warning)
+    print(warning, flush=True)
 uvicorn.run(app, host=config.UI_HOST, port=config.UI_PORT, log_level="warning")

@@ -24,7 +24,7 @@ def main() -> None:
 
     if args.command == "serve":
         if warning := config.exposure_warning(config.A2A_HOST):
-            print(warning)
+            print(warning, flush=True)
         uvicorn.run(build_app(), host=config.A2A_HOST, port=config.A2A_PORT)
     else:
         print(asyncio.run(ask(args.text)))
