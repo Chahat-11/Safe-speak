@@ -17,15 +17,17 @@ from pydantic import BaseModel
 
 from safespeak.agents.architectures import ParallelCoordinator, SequentialCoordinator
 from safespeak.agents.coordinator import Coordinator, create_coordinator
+from safespeak.agents.correlation import create_correlation_specialist
 from safespeak.agents.critic import create_critic
 from safespeak.agents.explainer import create_explainer
 from safespeak.agents.parser import create_parser
 from safespeak.agents.pattern import create_pattern_specialist
 from safespeak.agents.reasoner import create_reasoner
+from safespeak.agents.retrieval import create_retrieval_specialist
 from safespeak.agents.router import create_router
-from safespeak.agents.specialists import create_stub_specialists
 from safespeak.agents.verifier import create_verifier
 from safespeak.blackboard import CASE_KEY
+from safespeak.case_history import record
 from safespeak.observability.tracer import tracer
 from safespeak.schemas import CaseRecord, RunMetrics
 
@@ -56,7 +58,12 @@ def build_root_agent(model=None, architecture: str = "hierarchical") -> Coordina
         cls=ARCHITECTURES[architecture],
         parser=create_parser(model),
         router=create_router(),
-        specialists=[create_verifier(model), create_pattern_specialist(), *create_stub_specialists()],
+        specialists=[
+            create_verifier(model),
+            create_pattern_specialist(),
+            create_retrieval_specialist(),
+            create_correlation_specialist(),
+        ],
         reasoner=create_reasoner(model),
         explainer=create_explainer(model),
         critic=create_critic(model),
@@ -91,6 +98,8 @@ class SafeSpeakService:
         raw_case = final.state.get(CASE_KEY)
         case = CaseRecord.model_validate(raw_case) if raw_case else None
         metrics = tracer.finish_run(invocation_id, case.case_id if case else None)
+        if case is not None:
+            record(case)  # remembered for the Correlation specialist's next cases
         return AnalysisResult(markdown=markdown, case=case, metrics=metrics)
 
 

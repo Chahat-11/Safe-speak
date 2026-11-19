@@ -1,5 +1,6 @@
 # Live service (step 1-5)
-google-adk==2.12.0      # agent framework for the live detection service
+google-adk[a2a]==2.12.0 # agent framework for the live service; [a2a] adds the A2A protocol
+a2a-sdk==1.3.1          # A2A protocol library ADK's to_a2a / RemoteA2aAgent use (safespeak/a2a/)
 litellm==1.106.2        # model adapter ADK uses to talk to Ollama (not an agent framework)
 pydantic==2.14.1        # every agent input/output is a Pydantic model
 mcp==2.3.0              # custom MCP tool server
@@ -10,5 +11,4 @@ tldextract==5.4.0       # registrable-domain parsing, offline suffix list
 pytest
 pytest-asyncio
 
-# Later pass: offline background crews
-# crewai
+# Offline crews: separate venv, see requirements-crews.txt

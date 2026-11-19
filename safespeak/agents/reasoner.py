@@ -23,12 +23,16 @@ How to weigh the evidence:
   receive money or a prize, transfer money, install an app, or contact a
   personal number to avoid a threat.
 - Moderate signs: a pattern match below 0.8; a verifier result "suspicious"
-  (young or lookalike domain); urgency or threats combined with a link.
+  (young or lookalike domain); urgency or threats combined with a link;
+  correlation showing earlier cases judged scam share this link or number.
 - Signs of a legitimate message: it only informs (delivered, payment
   successful, appointment, balance, an OTP for an action you started that
   says not to share it) and asks for nothing risky. Treat that as
   likely_safe even with no specialist findings.
 - "clean" or "unknown" verifier results do not prove a link is safe.
+- retrieved_evidence lists similar known past cases. They only SUPPORT a
+  label the other signs already point to (known scams support scam, known
+  legitimate messages support likely_safe); never decide a label from them alone.
 
 Labels and confidence:
 - scam: one strong sign, or several moderate ones (confidence 0.75-0.95).

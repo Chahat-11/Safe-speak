@@ -41,3 +41,11 @@ def tool_cache(tmp_path, monkeypatch):
     monkeypatch.setenv("SAFESPEAK_CACHE_DIR", str(cache))  # for the MCP subprocess
     monkeypatch.setattr(config, "CACHE_DIR", cache)       # for in-process unit tests
     return cache
+
+
+@pytest.fixture(autouse=True)
+def case_history(tmp_path, monkeypatch):
+    """Each test starts with an empty Correlation memory, never data/case_history.jsonl."""
+    path = tmp_path / "case_history.jsonl"
+    monkeypatch.setattr(config, "CASE_HISTORY_PATH", path)
+    return path

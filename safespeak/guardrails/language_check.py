@@ -12,6 +12,7 @@ If the Parser disagreed, the field is corrected and a GuardrailEvent logged.
 check_explanation_script (after_agent on the Explainer): an English reply
 must not contain Devanagari. If it does, it raises, so the Coordinator's
 one-retry rule re-runs the Explainer instead of spending a Critic loop.
+For a Hinglish reply that came out in Devanagari, the retry asks for English.
 """
 
 import re
@@ -36,7 +37,9 @@ _HINGLISH_WORDS = {re.sub(r"(.)\1+", r"\1", w) for w in _HINGLISH_WORDS}  # sque
 REPLY_LANGUAGE = {
     "en": "English",
     "hi": "Hindi (Devanagari script)",
-    "hinglish": "Hinglish (Hindi written in English letters)",
+    # qwen2.5:3b cannot write Hinglish: it produced broken Devanagari, or ran
+    # on for 10 minutes. Simple English is what a Hinglish reader can use.
+    "hinglish": "simple English (the reader writes Hinglish, so use short, easy words)",
 }
 
 
@@ -66,4 +69,10 @@ def check_explanation_script(callback_context: CallbackContext) -> None:
         return
     text = " ".join([case.explanation.headline, *case.explanation.why, *case.explanation.what_to_do])
     if _DEVANAGARI.search(text):
+        if case.parsed.language != "en":
+            # A 3B model asked for Hinglish often writes broken Devanagari, twice
+            # in a row. Make the one retry ask for English, which it writes well.
+            state = callback_context.state
+            post(state, "parsed", case.parsed.model_copy(update={"language": "en"}))
+            log_guardrail(state, "agent", "replaced", f"Reply in {case.parsed.language!r} came out in the wrong script; retrying in English.")
         raise ValueError(f"Explanation uses Devanagari but reply language is {case.parsed.language!r}")

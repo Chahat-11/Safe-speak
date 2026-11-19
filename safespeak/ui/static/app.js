@@ -11,8 +11,8 @@ const ROWS = [
   { name: "router", label: "Router", role: "picks who looks", kind: "fixed rules", status: "The Router is choosing who should look..." },
   { name: "verifier", label: "Link checker", role: "looks up each website", kind: "AI + tools", status: "The Link checker is looking up each website..." },
   { name: "pattern", label: "Pattern finder", role: "known scam tricks", kind: "fixed rules", status: "The Pattern finder is comparing known scam tricks..." },
-  { name: "retrieval", label: "Past cases", role: "similar old messages", kind: "not built yet", status: "Past cases: not built yet..." },
-  { name: "correlation", label: "Scam waves", role: "related campaigns", kind: "not built yet", status: "Scam waves: not built yet..." },
+  { name: "retrieval", label: "Past cases", role: "similar known messages", kind: "fixed rules", status: "Past cases is searching similar known messages..." },
+  { name: "correlation", label: "Scam waves", role: "same link or number before", kind: "fixed rules", status: "Scam waves is checking earlier cases..." },
   { name: "reasoner", label: "Reasoner", role: "decides", kind: "AI model", status: "The Reasoner is weighing the evidence..." },
   { name: "explainer", label: "Explainer", role: "writes the answer", kind: "AI model", status: "The Explainer is writing the answer..." },
   { name: "critic", label: "Critic", role: "checks the answer", kind: "AI model", status: "The Critic is checking the answer..." },
@@ -26,7 +26,10 @@ const ARCHITECTURES = {
 };
 
 const ANSWER_WORDS = { scam: "Scam", suspicious: "Suspicious", likely_safe: "Probably safe", uncertain: "Not sure" };
-const SECRET_NAMES = { OTP: "an OTP", ACCOUNT: "an account number", CARD: "a card number", AADHAAR: "an Aadhaar number" };
+const SECRET_NAMES = {
+  OTP: "an OTP", ACCOUNT: "an account number", CARD: "a card number", AADHAAR: "an Aadhaar number",
+  CVV: "a CVV", PASSWORD: "a password", PAN: "a PAN number",
+};
 const GUARD_WORDS = {
   skip_if_nothing_to_check: "nothing new to check",
   skip_useless_loop_back: "nothing new to find",
@@ -370,8 +373,16 @@ const FINDINGS = {
     const count = record.pattern_matches.length;
     return count ? plural(count, "scam pattern") : "no known pattern";
   },
-  retrieval: () => "not built yet",
-  correlation: () => "not built yet",
+  retrieval(record) {
+    const hits = record.retrieved_evidence;
+    if (!hits.length) return "no similar known case";
+    const scams = hits.filter((hit) => hit.title.startsWith("Known scam")).length;
+    return `${plural(hits.length, "similar case")}, ${scams} scam`;
+  },
+  correlation(record) {
+    const related = record.correlation ? record.correlation.related_case_ids.length : 0;
+    return related ? `seen in ${plural(related, "earlier case")}` : "nothing seen before";
+  },
   reasoner: (record) => (record.verdict ? `${ANSWER_WORDS[record.verdict.label]}, ${Math.round(record.verdict.confidence * 100)}%` : ""),
   explainer: (record) => (record.explanation ? "answer written" : ""),
   critic: (record) => (record.critique ? (record.critique.approved ? "approved" : "asked for a rewrite") : ""),
@@ -619,7 +630,8 @@ const SECTIONS = [
   { label: "Who was asked to look", keys: ["routing"], lines: (c) => (c.routing ? [c.routing.specialists.map(agentLabel).join(", ")] : []) },
   { label: "Website checks", keys: ["verifier_findings"], lines: (c) => c.verifier_findings.map((finding) => finding.detail) },
   { label: "Scam tricks recognised", keys: ["pattern_matches"], lines: (c) => c.pattern_matches.map((match) => match.pattern_name) },
-  { label: "Similar past cases", keys: ["retrieved_evidence"], lines: (c) => (c.retrieved_evidence.length ? [plural(c.retrieved_evidence.length, "item")] : []) },
+  { label: "Similar past cases", keys: ["retrieved_evidence"], lines: (c) => c.retrieved_evidence.map((hit) => `${hit.title}, ${Math.round(hit.similarity * 100)}% similar`) },
+  { label: "Seen before", keys: ["correlation"], lines: (c) => (c.correlation && c.correlation.related_case_ids.length ? [c.correlation.summary] : []) },
   { label: "The decision", keys: ["verdict"], lines: (c) => (c.verdict ? [`${ANSWER_WORDS[c.verdict.label]}, ${Math.round(c.verdict.confidence * 100)}% confident.`] : []) },
   { label: "The answer written", keys: ["explanation"], lines: (c) => (c.explanation ? [c.explanation.headline] : []) },
   { label: "The Critic's review", keys: ["critique"], lines: (c) => (c.critique ? (c.critique.approved ? ["Approved."] : ["Asked for a rewrite.", ...c.critique.issues]) : []) },
@@ -706,12 +718,19 @@ function updateGuardLog(record) {
 function safetySentence(item) {
   if (item.action === "allowed") return "The message passed the entry check.";
   if (item.action === "redacted") return `Hid ${secretWords(item.reason)} ${item.stage === "input" ? "before any agent read it" : "in the answer"}.`;
-  if (item.action === "flagged") return "Noticed wording that tries to instruct the agents. Noted, not blocked.";
+  if (item.action === "flagged" && item.reason.includes("prompt-injection")) return "Noticed wording that tries to instruct the agents. Noted, not blocked.";
+  if (item.action === "flagged" && item.reason.includes("abusive")) return "Noticed abusive language. Noted, not blocked.";
   if (item.action === "retried") return "A reply was in the wrong form, so it was asked again.";
   if (item.action === "failed") return "A reply was still in the wrong form.";
   if (item.action === "capped") return "Stopped a loop at its limit.";
-  if (item.action === "blocked") return "Stopped the message before any agent read it.";
+  if (item.action === "blocked" && item.stage === "input") return "Stopped the message before any agent read it.";
+  if (item.reason.startsWith("Loop-back skipped")) return "Did not send the case back: no helper could add anything new.";
   if (item.reason.startsWith("Critic issues not confirmed")) return "Critic objection ignored: code found no real problem.";
+  if (item.reason.startsWith("Critic repeated its checklist")) return "Critic repeated its instructions instead of reviewing; ignored.";
+  if (item.reason.startsWith("Parser listed things not in the message")) return "Removed facts the Reader made up (not in the message).";
+  if (item.reason.startsWith("Parser said language")) return "Corrected the language the Reader guessed.";
+  if (item.reason.startsWith("Verdict corrected")) return `Corrected the decision: ${item.reason.replace("Verdict corrected: ", "")}.`;
+  if (item.reason.startsWith("Removed") && item.stage === "output") return "Removed unsafe advice from the answer.";
   return item.reason;
 }
 

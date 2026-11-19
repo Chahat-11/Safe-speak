@@ -32,7 +32,10 @@ def local_model() -> LiteLlm:
     """The Ollama model every LLM agent uses (nothing leaves this machine)."""
     # temperature 0: the same message should get the same answer, so that
     # evaluation runs and viva demos are repeatable.
-    return LiteLlm(model=config.MODEL, api_base=config.OLLAMA_API_BASE, temperature=0)
+    # max_tokens and timeout: a runaway reply (seen once: an Explainer writing
+    # Devanagari for 10 minutes) must fail fast so the one-retry rule can act.
+    return LiteLlm(model=config.MODEL, api_base=config.OLLAMA_API_BASE, temperature=0,
+                   max_tokens=config.MAX_OUTPUT_TOKENS, timeout=config.LLM_TIMEOUT_SECONDS)
 
 
 def trace_callbacks() -> dict:

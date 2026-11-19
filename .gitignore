@@ -7,3 +7,5 @@ logs/*.jsonl
 data/cache/
 results/
 .venv-crews/
+data/case_history.jsonl
+.DS_Store

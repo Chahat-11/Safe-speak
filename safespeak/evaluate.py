@@ -8,6 +8,8 @@ Writes to results/ (message text is never written):
   <run>_messages.csv : one row per message (truth, prediction, latency, tokens)
   <run>_agents.csv   : one row per message x agent, from RunMetrics
   <run>_manifest.json: model, architecture, git commit, for reproducibility
+  <run>_history.jsonl: the Correlation memory for this run only (indicators,
+                       no text), so runs and architectures never share it
 <run> = <file>_<architecture>_n<n>_seed<seed>. Rows are saved as they finish
 and a rerun of the same <run> resumes, so a long run survives interruption.
 Rows that failed are retried on the rerun; finished rows are never run twice.
@@ -213,6 +215,8 @@ def main() -> None:
 
     stem = RESULTS_DIR / f"{args.file.stem}_{args.architecture}_n{args.n}_seed{args.seed}"
     RESULTS_DIR.mkdir(exist_ok=True)
+    # Correlation starts empty and only remembers this run's own earlier cases.
+    config.CASE_HISTORY_PATH = stem.with_name(stem.name + "_history.jsonl")
     write_manifest(stem, args)
     messages, _ = asyncio.run(evaluate(args.file, args.n, args.seed, architecture=args.architecture, run_stem=stem))
     print("\n" + summary(messages))

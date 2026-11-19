@@ -17,6 +17,8 @@ University project — code must stay small and easy to explain in a viva.
   `safespeak/schemas.py`. No free-text passing.
 - **Guardrails:** ADK callbacks (before/after model, tool, agent), not prompt text.
 - **LLM:** local Ollama only (messages contain OTPs and account references).
+- **A2A:** SafeSpeak is also an A2A agent (`safespeak/a2a/`): other agents call
+  it over the protocol. Inside, agents still use only the blackboard.
 - **Logging:** every agent/model/tool call logged for tracing and cost/latency.
 
 ## Live pipeline (ADK, 9 agents)
@@ -54,14 +56,19 @@ Two capped loops, caps enforced in `before_agent` callbacks (not prompts):
 | `safespeak/agents/verifier.py` | LLM agent that calls the two MCP tools; findings built from tool results |
 | `safespeak/agents/pattern.py` | Pattern specialist: rule-based matcher, no LLM, no tools |
 | `safespeak/agents/pattern_catalogue.py` | Scam patterns = required + supporting regex cues, optional `exempt` |
-| `safespeak/agents/specialists.py` | STUBS for Retrieval, Correlation (empty results) |
-| `safespeak/guardrails/input_guard.py` | before_agent on Coordinator: block, redact, flag |
+| `safespeak/agents/retrieval.py`, `retrieval_index.py` | Retrieval: TF-IDF search over labelled dev cases, no LLM |
+| `safespeak/agents/correlation.py` | Correlation: earlier cases sharing a domain/phone (scam waves), no LLM |
+| `safespeak/case_history.py` | Correlation memory: indicators + verdict per case, never text (git-ignored JSONL) |
+| `safespeak/a2a/` | A2A: `server.py` (`to_a2a`, 127.0.0.1:8010), `client.py` (`RemoteA2aAgent`) |
+| `safespeak/guardrails/input_guard.py` | before_agent on Coordinator: block, redact, flag injection + abuse |
+| `safespeak/guardrails/parse_check.py` | after_agent on Parser: drop extracted facts not in the message |
+| `safespeak/guardrails/verdict_check.py` | after_agent on Reasoner: no likely_safe on strong evidence; confidence bands |
 | `safespeak/guardrails/model_guard.py` | before_model: strip chat turns, re-redact |
 | `safespeak/guardrails/loop_caps.py` | before_agent caps: Router (Reasoner loop), Explainer (Critic loop); useless-loop skip |
-| `safespeak/guardrails/output_guard.py` | after_agent on Coordinator: safe advice, render, close |
+| `safespeak/guardrails/output_guard.py` | after_agent on Coordinator: drop unsafe advice, render, close |
 | `safespeak/guardrails/language_check.py` | Parser: language set by code; Explainer: reject wrong script |
 | `safespeak/guardrails/critique_check.py` | after_agent on Critic: verifies the Critic's tagged issues in code |
-| `safespeak/guardrails/redaction.py` | OTP/card/account/Aadhaar masking regexes |
+| `safespeak/guardrails/redaction.py` | OTP/PIN/CVV/password/card/account/Aadhaar/PAN masking regexes |
 | `safespeak/observability/tracer.py` | JSONL trace + RunMetrics |
 | `safespeak/evaluate.py` | Evaluation harness: N messages from a CSV -> results/*.csv |
 | `safespeak/mcp_server/server.py` | Our MCP server (stdio): `domain_age`, `domain_reputation` |
@@ -107,8 +114,8 @@ Two capped loops, caps enforced in `before_agent` callbacks (not prompts):
 - A skipped LlmAgent's returned content is validated by ADK against its
   output_schema, so the Explainer's veto returns its last accepted draft.
 - `skip_useless_loop_back` runs on the Router BEFORE the cap: if no requested
-  specialist could add evidence (`could_add_evidence`: stubs never, Pattern
-  only once, Verifier only with unchecked domains) the loop is closed without
+  specialist could add evidence (`could_add_evidence`: rule-based Pattern,
+  Retrieval, Correlation only once; Verifier only with unchecked domains) the loop is closed without
   using the cap budget. The LLM asks for "more" far more often than useful.
 
 ## Language
@@ -117,7 +124,10 @@ Two capped loops, caps enforced in `before_agent` callbacks (not prompts):
   LLM: qwen2.5:7b tagged ~half of English dev messages as Hindi.
 - Explainer gets `reply_language` (e.g. "English"); `check_explanation_script`
   raises on Devanagari in a non-Hindi reply, so the one-retry rule fixes it
-  instead of a Critic loop.
+  instead of a Critic loop (and switches the retry to English).
+- Hinglish messages get a reply in simple English: qwen2.5:3b asked for
+  Hinglish wrote broken Devanagari or ran for 10 minutes.
+- Every model call is capped (`MAX_OUTPUT_TOKENS`, `LLM_TIMEOUT_SECONDS`).
 
 ## Critic grounding ("the LLM Critic proposes, code confirms")
 
@@ -131,6 +141,19 @@ Two capped loops, caps enforced in `before_agent` callbacks (not prompts):
   code's finding + the Critic's wording. Unverifiable / untagged objections
   are approved and logged as a GuardrailEvent.
 - Why: qwen2.5:3b listed passed checks as issues and approved nothing.
+- Issues that just repeat the checklist (`_ECHO`) are logged once as an echo.
+
+## Guardrails that check LLM output in code
+
+- Parser (`parse_check.ground_parsed`): urls/emails/phones/urgency cues/org
+  must appear in the text; link actions need a link; `asks_for_credentials`
+  needs an actual request (a bank's "do not share it" is advice). qwen2.5:3b
+  copied schema examples ("HDFC Bank", "within 24 hours", "click link").
+- Reasoner (`verdict_check`): likely_safe is raised to suspicious when a domain
+  is blocklisted or a pattern weight >= 0.8; confidence clamped to its band.
+- Output guard: drops advice to share a secret (always) and to click / pay /
+  install (unless likely_safe; official channels like 1930 are kept).
+- Input guard flags (does not block) prompt injection and abusive language.
 
 ## MCP tools (exactly two; do not add more without asking)
 
@@ -148,6 +171,20 @@ Two capped loops, caps enforced in `before_agent` callbacks (not prompts):
   like "Link in email." into urls/emails).
 - Only the domain name leaves the machine (RDAP); feeds are downloaded and
   matched locally. Cache TTLs in `config.py`.
+- Link shorteners (`domains.SHORTENERS`) are `unknown` in both tools, never
+  `clean`: the real destination is hidden.
+
+## Retrieval and Correlation (rule-based, no LLM, no tools)
+
+- Retrieval: TF-IDF (words + word pairs) over `dev_synthetic.csv` only;
+  refuses test_real. `MIN_SIMILARITY` 0.3, chosen on dev + hard negatives
+  (2.3% of hard negatives get mostly-scam neighbours), so the Reasoner treats
+  retrieval as supporting evidence only, never deciding a label alone.
+- Correlation: `case_history` stores registrable domains + phone digits and
+  the verdict label per finished case (app.py records it); a new case lists
+  earlier cases sharing an indicator. Shorteners are not indicators.
+  Evaluation runs get their own empty history (`<run>_history.jsonl`).
+- Caveat: earlier verdicts feed later ones, so correlation is a moderate sign.
 
 ## Pattern specialist
 
@@ -173,7 +210,8 @@ Two capped loops, caps enforced in `before_agent` callbacks (not prompts):
   Kaggle A2P file (sender IDs were randomly assigned). Sender-ID validation,
   when built, must use TRAI header rules only.
 - Results CSVs never contain message text.
-- Known gaps: no Hinglish test data; hard negatives synthetic; no RAG corpus.
+- Known gaps: no Hinglish test data; hard negatives synthetic; the Retrieval
+  corpus is synthetic dev data, not verified advisories.
 
 ## Architectures
 
@@ -214,13 +252,16 @@ stops later callbacks).
 - [x] Critic agent + capped Explainer <-> Critic loop
 - [x] Evaluation harness (`safespeak.evaluate`) + `--json` CLI flag
 - [x] Real Pattern specialist (rule-based catalogue)
-- [ ] Real Retrieval (RAG), Correlation specialists
+- [x] Real Retrieval (TF-IDF over dev cases), Correlation (case history) specialists
+- [x] Guardrail fixes from demo runs (redaction gaps, injection/abuse flags,
+      parser grounding, verdict check, unsafe advice, shorteners)
+- [x] A2A: SafeSpeak served with `to_a2a`, called by `RemoteA2aAgent`
 - [x] Reasoner sees the masked message + `specialists_already_run`; prompt
       weighs evidence explicitly ("no findings" is not "uncertain")
 - [x] Verifier skips loop-backs when its domains were already checked
 - [x] CrewAI offline crews, architecture baselines, metrics report, run monitor
 - [ ] Reporting runs finished and written up (`scripts/run_benchmark.sh`)
-- [ ] Last evaluation (deferred, do not start): A2A, cloud deployment
+- [ ] Cloud deployment (deferred, do not start)
 
 ## Commands
 
@@ -233,6 +274,8 @@ ollama pull qwen2.5:3b      # default model (fits 8 GB RAM); larger: SAFESPEAK_M
 .venv/bin/python -m safespeak.evaluate --file data/dev_synthetic.csv --n 10
 .venv/bin/python -m safespeak.mcp_server      # run the MCP server alone (stdio)
 .venv/bin/python -m safespeak.ui              # run monitor: http://127.0.0.1:8765
+.venv/bin/python -m safespeak.a2a serve       # A2A server: http://127.0.0.1:8010
+.venv/bin/python -m safespeak.a2a ask "msg"   # another ADK agent asks it over A2A
 scripts/run_benchmark.sh                      # reporting runs, resumable
 .venv/bin/python -m safespeak.report results/test_real_hierarchical_n463_seed0 --out docs/evaluation.md
 python3.12 -m venv .venv-crews && .venv-crews/bin/pip install -r requirements-crews.txt

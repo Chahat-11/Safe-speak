@@ -21,8 +21,8 @@ from google.genai import types
 from safespeak.blackboard import close_loop, increment_loop, log_guardrail, read_case
 from safespeak.schemas import MAX_CRITIC_LOOPS, MAX_REASONER_LOOPS, CaseRecord, Specialist
 
-# Specialists that are still stubs never have anything new to add.
-STUB_SPECIALISTS = {Specialist.RETRIEVAL, Specialist.CORRELATION}
+# Rule-based specialists give the same answer on the same case: one run is enough.
+DETERMINISTIC_SPECIALISTS = {Specialist.PATTERN, Specialist.RETRIEVAL, Specialist.CORRELATION}
 
 
 def cap_reasoner_loops(callback_context: CallbackContext) -> types.Content | None:
@@ -50,10 +50,8 @@ def could_add_evidence(case: CaseRecord, specialist: Specialist) -> bool:
     from safespeak.agents.verifier import _unchecked  # local import: verifier imports guardrails
 
     already_ran = case.routing is not None and specialist in case.routing.specialists
-    if specialist in STUB_SPECIALISTS:
-        return False
-    if specialist == Specialist.PATTERN:
-        return not already_ran  # deterministic on the same text
+    if specialist in DETERMINISTIC_SPECIALISTS:
+        return not already_ran
     if specialist == Specialist.VERIFIER:
         return bool(_unchecked(case))
     return True

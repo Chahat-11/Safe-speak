@@ -208,9 +208,10 @@ async def test_useless_loop_back_is_skipped():
     assert any("no requested specialist" in e.reason for e in result.case.guardrail_events)
 
 
-async def test_stub_and_pattern_requests_do_not_loop():
-    asks_stubs = {**NEEDS_MORE, "requested_specialists": ["pattern", "retrieval", "correlation"]}
-    llm = fake(reasoner=[asks_stubs, VERDICT], explainer=[HEDGED])
+async def test_requests_for_rule_based_specialists_do_not_loop():
+    # Pattern, Retrieval and Correlation already ran and give the same answer again.
+    asks_again = {**NEEDS_MORE, "requested_specialists": ["pattern", "retrieval", "correlation"]}
+    llm = fake(reasoner=[asks_again, VERDICT], explainer=[HEDGED])
     await analyse(MESSAGE, model=llm)
 
     assert len(llm.calls_for("reasoner")) == 1
@@ -290,7 +291,7 @@ async def test_baselines_gather_all_evidence_without_reflection(architecture):
     assert result.case.status == CaseStatus.CLOSED and result.markdown
     assert {f.check for f in result.case.verifier_findings} == {"domain_age", "reputation"}  # verifier ran
     assert "credential_request" in {m.pattern_id for m in result.case.pattern_matches}  # pattern kept too
-    assert result.case.correlation is not None  # stub ran too
+    assert result.case.correlation is not None  # correlation ran too
     assert {s.value for s in result.case.routing.specialists} == {"verifier", "pattern", "retrieval", "correlation"}
 
 
@@ -310,3 +311,29 @@ async def test_malformed_url_from_parser_does_not_crash_the_run():
 
     assert result.case.status == CaseStatus.CLOSED
     assert llm.calls_for("verifier") == []  # nothing domain-shaped to check
+
+
+async def test_correlation_links_a_repeat_of_the_same_scam_link():
+    first = await analyse(MESSAGE, model=fake())
+    second = await analyse(MESSAGE, model=fake())
+
+    assert first.case.correlation.related_case_ids == []
+    assert second.case.correlation.related_case_ids == [first.case.case_id]
+    assert second.case.correlation.shared_indicators == [DOMAIN]
+
+
+async def test_retrieval_posts_similar_known_cases():
+    result = await analyse("Congratulations! You have won Rs 25 lakh in KBC lottery. Call 9876543210 to claim.", model=fake())
+    assert result.case.retrieved_evidence
+    assert all(e.source == "dev_synthetic" and e.similarity >= 0.3 for e in result.case.retrieved_evidence)
+
+
+async def test_hinglish_reply_in_broken_script_is_retried_in_english():
+    broken = {"headline": "यह सफाई माहिती होती", "why": ["निर्णय नहीं"], "what_to_do": ["या माहितीसाठी"]}
+    llm = fake(explainer=[broken, EXPLANATION])
+    result = await analyse(MESSAGE, model=llm)  # MESSAGE is Hinglish
+
+    assert result.case.status == CaseStatus.CLOSED
+    assert result.case.parsed.language == "en"
+    assert any("retrying in English" in e.reason for e in result.case.guardrail_events)
+    assert '"reply_language": "English"' in str(llm.calls_for("explainer")[1].config.system_instruction)

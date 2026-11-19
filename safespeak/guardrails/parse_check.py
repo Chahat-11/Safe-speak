@@ -12,7 +12,8 @@ So every extracted fact must be found in the message text, or it is removed:
   claimed_organisation-> one of its words must appear in the text
   urgency_cues        -> must appear in the text
   requested_actions   -> link/click actions only if the message has a link
-  asks_for_credentials-> only if the text mentions a secret
+  asks_for_credentials-> only if the text asks for a secret; a bank's own
+                         "do not share it with anyone" is advice, not a request
 Anything removed is logged as a GuardrailEvent.
 """
 
@@ -28,6 +29,12 @@ _LINK_ACTION = re.compile(r"(?i)\b(click|link|url|website|tap)\b")
 _SECRET = re.compile(
     r"(?i)\b(otp|m?pin|password|cvv|card|account|a/c|bank details|kyc|aadhaa?r|pan|credentials?|login)\b"
     r"|\[(OTP|CARD|ACCOUNT|CVV|PASSWORD|AADHAAR|PAN)\]|ओटीपी|पिन|पासवर्ड"
+)
+# Advice like "Do not share it with anyone" mentions a secret without asking for one.
+_ADVICE = re.compile(r"(?i)[^.!?\n]*\b(do not|don't|dont|never|mat)\s+(share|disclose|tell|give)\b[^.!?\n]*")
+_ASK = re.compile(
+    r"(?i)\b(share|send|give|tell|enter|reply|confirm|provide|submit|update|verify|fill|forward|type"
+    r"|bhejo|batao|bata do|de do)\b"
 )
 # Words too common to prove an organisation is named ("Bank" alone is not "HDFC Bank").
 _GENERIC = {"bank", "the", "ltd", "limited", "india", "indian", "of", "and", "pvt", "private", "services", "team"}
@@ -56,7 +63,7 @@ def ground(parsed: ParsedMessage, text: str) -> tuple[ParsedMessage, list[str]]:
         "urgency_cues": [c for c in parsed.urgency_cues if c.lower() in lower],
         "requested_actions": [a for a in parsed.requested_actions if has_link or not _LINK_ACTION.search(a)],
         "claimed_organisation": parsed.claimed_organisation if _org_in(parsed.claimed_organisation, lower) else None,
-        "asks_for_credentials": parsed.asks_for_credentials and bool(_SECRET.search(text)),
+        "asks_for_credentials": parsed.asks_for_credentials and _asks_for_secret(text),
     }
     removed = []
     for field, value in keep.items():
@@ -66,6 +73,11 @@ def ground(parsed: ParsedMessage, text: str) -> tuple[ParsedMessage, list[str]]:
         elif before != value:
             removed.append(f"{field}: {before!r}")
     return parsed.model_copy(update=keep), removed
+
+
+def _asks_for_secret(text: str) -> bool:
+    request = _ADVICE.sub(" ", text)  # drop "do not share it with anyone" sentences
+    return bool(_SECRET.search(text)) and bool(_ASK.search(request))
 
 
 def _url_in(url: str, lower: str) -> bool:

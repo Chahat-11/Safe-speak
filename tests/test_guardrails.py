@@ -134,3 +134,11 @@ def test_confidence_is_clamped_to_its_band():
 def test_link_shortener_is_never_clean():
     assert domain_age("http://bit.ly/3xYz").result == CheckResult.UNKNOWN
     assert domain_reputation("bit.ly").result == CheckResult.UNKNOWN
+
+
+def test_a_bank_otp_with_do_not_share_advice_is_not_a_credential_request():
+    parsed = ParsedMessage(claimed_organisation="HDFC Bank", asks_for_credentials=True)
+    text = "Your OTP for txn of Rs 2500 at Amazon is [OTP]. Do not share it with anyone. -HDFC Bank"
+    assert ground(parsed, text)[0].asks_for_credentials is False
+    asking = "Dear user, your OTP is [OTP], share it with our officer to unblock your account."
+    assert ground(parsed.model_copy(update={"claimed_organisation": None}), asking)[0].asks_for_credentials is True

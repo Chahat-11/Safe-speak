@@ -8,6 +8,11 @@ from pathlib import Path
 MODEL = os.getenv("SAFESPEAK_MODEL", "ollama_chat/qwen2.5:3b")
 OLLAMA_API_BASE = os.getenv("OLLAMA_API_BASE", "http://localhost:11434")
 
+# Every model reply is short JSON (~100-300 tokens). The caps stop a runaway
+# generation from hanging the pipeline.
+MAX_OUTPUT_TOKENS = 700
+LLM_TIMEOUT_SECONDS = 180
+
 LOG_PATH = Path(os.getenv("SAFESPEAK_LOG_PATH", "logs/trace.jsonl"))
 
 # Input guardrail limits.
@@ -18,3 +23,11 @@ MAX_MESSAGE_CHARS = 4000
 CACHE_DIR = Path(os.getenv("SAFESPEAK_CACHE_DIR", "data/cache"))
 FEED_TTL_HOURS = 24
 RDAP_TTL_HOURS = 24 * 7
+
+# Retrieval knowledge base: labelled past cases. Development data only;
+# test_real.csv is refused by the index (it is the held-out test set).
+RETRIEVAL_CORPUS = Path(os.getenv("SAFESPEAK_RETRIEVAL_CORPUS", "data/dev_synthetic.csv"))
+
+# Correlation memory: indicators (domains, phone numbers) of earlier cases,
+# never message text. Local file, git-ignored.
+CASE_HISTORY_PATH = Path(os.getenv("SAFESPEAK_CASE_HISTORY", "data/case_history.jsonl"))
