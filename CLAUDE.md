@@ -230,7 +230,10 @@ output goes to `data/proposed_patterns.json` for human review, never auto-merged
 
 ## Run monitor
 
-Binds to 127.0.0.1. It only listens to `tracer.listeners` so it cannot change
+Binds to 127.0.0.1 by default; host/port via `SAFESPEAK_UI_HOST` / `_PORT`
+(A2A: `SAFESPEAK_A2A_HOST` / `_PORT` / `_PUBLIC_URL`). A non-local host prints
+a warning: neither server has a login, so deploy only behind HTTPS + auth.
+It only listens to `tracer.listeners` so it cannot change
 agent behaviour. Guardrails are wrapped in `tracer.guarded` so skips are visible.
 UI text uses textContent only, since message and LLM text are untrusted.
 

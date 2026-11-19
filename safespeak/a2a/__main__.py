@@ -1,5 +1,7 @@
 """python -m safespeak.a2a serve           start the A2A server (127.0.0.1:8010)
    python -m safespeak.a2a ask "message"   ask it, as another agent would
+
+Host, port and public address: SAFESPEAK_A2A_HOST / _PORT / _PUBLIC_URL (config.py).
 """
 
 import argparse
@@ -7,8 +9,9 @@ import asyncio
 
 import uvicorn
 
+from safespeak import config
 from safespeak.a2a.client import ask
-from safespeak.a2a.server import HOST, PORT, build_app
+from safespeak.a2a.server import build_app
 
 
 def main() -> None:
@@ -20,7 +23,9 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command == "serve":
-        uvicorn.run(build_app(), host=HOST, port=PORT)
+        if warning := config.exposure_warning(config.A2A_HOST):
+            print(warning)
+        uvicorn.run(build_app(), host=config.A2A_HOST, port=config.A2A_PORT)
     else:
         print(asyncio.run(ask(args.text)))
 

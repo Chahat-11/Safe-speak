@@ -14,8 +14,10 @@ tracing, RunMetrics and the case history all behave exactly the same. Inside,
 the nine agents still coordinate only through the blackboard; A2A is the
 system's front door, not a way for our own agents to talk to each other.
 
-Local only: binds to 127.0.0.1, because messages may hold OTPs and account
-numbers. One message at a time, because the local model runs one request.
+Local only by default: binds to 127.0.0.1, because messages may hold OTPs and
+account numbers. SAFESPEAK_A2A_HOST / _PORT change where it listens, and
+SAFESPEAK_A2A_PUBLIC_URL the address written into the agent card (config.py).
+One message at a time, because the local model runs one request.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
+from urllib.parse import urlparse
 
 from google.adk.a2a.utils.agent_to_a2a import to_a2a
 from google.adk.agents import BaseAgent, InvocationContext
@@ -31,10 +34,8 @@ from google.genai import types
 from pydantic import PrivateAttr
 from starlette.applications import Starlette
 
+from safespeak import config
 from safespeak.app import SafeSpeakService
-
-HOST = "127.0.0.1"
-PORT = 8010
 
 DESCRIPTION = (
     "SafeSpeak checks a suspicious SMS, email or WhatsApp message (English, Hindi or Hinglish) "
@@ -61,9 +62,13 @@ class SafeSpeakA2aAgent(BaseAgent):
         yield Event(author=self.name, invocation_id=ctx.invocation_id, content=reply)
 
 
-def build_app(model=None, host: str = HOST, port: int = PORT) -> Starlette:
-    """The A2A web app. `model` lets tests swap in a fake LLM."""
+def build_app(model=None, public_url: str | None = None) -> Starlette:
+    """The A2A web app. `model` lets tests swap in a fake LLM.
+
+    `public_url` is where other agents reach us; it goes into the agent card.
+    """
     agent = SafeSpeakA2aAgent(name="safespeak", description=DESCRIPTION)
+    protocol, host, port = card_address(public_url or config.A2A_PUBLIC_URL)
 
     @asynccontextmanager
     async def lifespan(_app: Starlette):
@@ -71,7 +76,14 @@ def build_app(model=None, host: str = HOST, port: int = PORT) -> Starlette:
             agent.use(service)
             yield
 
-    return to_a2a(agent, host=host, port=port, lifespan=lifespan)
+    return to_a2a(agent, protocol=protocol, host=host, port=port, lifespan=lifespan)
+
+
+def card_address(url: str) -> tuple[str, str, int]:
+    """'https://safespeak.example.com' -> ('https', 'safespeak.example.com', 443)."""
+    parts = urlparse(url)
+    default_port = 443 if parts.scheme == "https" else 80
+    return parts.scheme or "http", parts.hostname or "127.0.0.1", parts.port or default_port
 
 
 def _text_of(content: types.Content | None) -> str:

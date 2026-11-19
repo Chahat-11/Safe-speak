@@ -1,4 +1,5 @@
-"""The monitor's small web server. Local only: binds to 127.0.0.1.
+"""The monitor's small web server. Local only by default: binds to 127.0.0.1
+(SAFESPEAK_UI_HOST / SAFESPEAK_UI_PORT change it; see config.py).
 
   POST /api/analyse  {"text", "architecture"} -> Server-Sent Events, live
   GET  /api/replay                            -> the recorded sample, same format

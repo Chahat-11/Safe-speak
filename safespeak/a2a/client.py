@@ -18,9 +18,9 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
-from safespeak.a2a.server import HOST, PORT
+from safespeak import config
 
-CARD_URL = f"http://{HOST}:{PORT}/.well-known/agent-card.json"
+CARD_URL = f"{config.A2A_PUBLIC_URL}/.well-known/agent-card.json"
 
 
 async def ask(text: str, card_url: str = CARD_URL, http: httpx.AsyncClient | None = None) -> str:
