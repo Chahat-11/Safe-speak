@@ -121,6 +121,9 @@ async def evaluate(
                 result = await service.analyse(truth["message_text"])
             except Exception as err:  # one bad message must not stop the run
                 error = f"{type(err).__name__}: {str(err).splitlines()[0][:150]}"
+                if "APIConnectionError" in error:  # Ollama is down: every later row would fail too
+                    print(f"Stopping: the local model is not reachable ({error[:80]}). Rerun to resume.", flush=True)
+                    break
             wall_ms = (time.perf_counter() - start) * 1000
             row = message_row(row_no, truth, result, wall_ms, error)
             new_agents = agent_rows(row_no, result)
