@@ -5,7 +5,17 @@ Headline numbers come only from `data/test_real.csv` (463 real messages, never u
 Hard negatives (synthetic, all legitimate) are a separate robustness check, never merged into the headline.
 Scam is the positive class; a verdict of scam or suspicious counts as flagged; uncertain counts as not flagged.
 The three n40 runs use the same 40 messages, so they compare the architectures directly.
-This file is regenerated with `python -m safespeak.report` as each run finishes; only finished runs are listed.
+Tables list finished runs only. Regenerate with `scripts/publish_evaluation.sh`.
+
+## Figures
+
+Made by `scripts/make_figures.py` from finished rows only (n is in each title).
+
+![Time and tokens per message](figures/latency_boxplot.png)
+
+![Seconds per agent, by architecture](figures/agent_heatmap_architectures.png)
+
+![Seconds per agent, message by message](figures/agent_heatmap_messages.png)
 
 ## Overview
 
