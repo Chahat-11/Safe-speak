@@ -10,5 +10,6 @@ tldextract==5.4.0       # registrable-domain parsing, offline suffix list
 # Dev
 pytest
 pytest-asyncio
+matplotlib==3.10.7      # scripts/make_figures.py (evaluation plots), not used by the live service
 
 # Offline crews: separate venv, see requirements-crews.txt
