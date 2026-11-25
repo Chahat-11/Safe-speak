@@ -60,6 +60,8 @@ Two capped loops, caps enforced in `before_agent` callbacks (not prompts):
 | `safespeak/agents/correlation.py` | Correlation: earlier cases sharing a domain/phone (scam waves), no LLM |
 | `safespeak/case_history.py` | Correlation memory: indicators + verdict per case, never text (git-ignored JSONL) |
 | `safespeak/a2a/` | A2A: `server.py` (`to_a2a`, 127.0.0.1:8010), `client.py` (`RemoteA2aAgent`) |
+| `safespeak/crews/a2a_ask.py` | CrewAI agent that asks the ADK SafeSpeak agent over A2A (cross-framework) |
+| `scripts/make_figures.py`, `publish_evaluation.sh` | Boxplots + agent heatmaps; rebuild and push `docs/evaluation.md` |
 | `safespeak/guardrails/input_guard.py` | before_agent on Coordinator: block, redact, flag injection + abuse |
 | `safespeak/guardrails/parse_check.py` | after_agent on Parser: drop extracted facts not in the message |
 | `safespeak/guardrails/verdict_check.py` | after_agent on Reasoner: no likely_safe on strong evidence; confidence bands |
@@ -220,6 +222,14 @@ hierarchical (runtime routing + both loops), sequential and parallel (all four
 specialists, one Critic pass, no loops). Parallel saves events in write order
 because each write replaces the whole case.
 
+## A2A across frameworks
+
+CrewAI 1.15 ships an A2A 0.3 client; ADK's server speaks 1.0. The server also
+serves its card in 0.3 format at `/.well-known/agent-card-v0.3.json`, and ADK's
+JSON-RPC endpoint accepts both versions. The CrewAI agent calls SafeSpeak via a
+tool (`execute_a2a_delegation`, `result_as_answer=True`): with CrewAI's `a2a=`
+setting the 3B model answered by itself instead of delegating.
+
 ## CrewAI crews (offline, separate venv)
 
 CrewAI needs older mcp/pydantic than the live service, so it has `.venv-crews`
@@ -258,7 +268,9 @@ stops later callbacks).
 - [x] Real Retrieval (TF-IDF over dev cases), Correlation (case history) specialists
 - [x] Guardrail fixes from demo runs (redaction gaps, injection/abuse flags,
       parser grounding, verdict check, unsafe advice, shorteners)
-- [x] A2A: SafeSpeak served with `to_a2a`, called by `RemoteA2aAgent`
+- [x] A2A: SafeSpeak served with `to_a2a`, called by `RemoteA2aAgent` (ADK)
+      and by a CrewAI agent (`crews ask`): ADK <-> CrewAI interoperability
+- [x] Evaluation figures: latency/token boxplots, agent heatmaps
 - [x] Reasoner sees the masked message + `specialists_already_run`; prompt
       weighs evidence explicitly ("no findings" is not "uncertain")
 - [x] Verifier skips loop-backs when its domains were already checked
@@ -283,6 +295,8 @@ scripts/run_benchmark.sh                      # reporting runs, resumable
 .venv/bin/python -m safespeak.report results/test_real_hierarchical_n463_seed0 --out docs/evaluation.md
 python3.12 -m venv .venv-crews && .venv-crews/bin/pip install -r requirements-crews.txt
 .venv-crews/bin/python -m safespeak.crews patterns   # or: audit
+.venv-crews/bin/python -m safespeak.crews ask "msg"  # CrewAI agent -> ADK SafeSpeak over A2A (server must run)
+.venv/bin/python scripts/make_figures.py             # docs/figures/*.png from finished results
 ```
 
 ## Code style

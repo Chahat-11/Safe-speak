@@ -18,6 +18,13 @@ Local only by default: binds to 127.0.0.1, because messages may hold OTPs and
 account numbers. SAFESPEAK_A2A_HOST / _PORT change where it listens, and
 SAFESPEAK_A2A_PUBLIC_URL the address written into the agent card (config.py).
 One message at a time, because the local model runs one request.
+
+Two agent cards, one endpoint. ADK speaks A2A protocol 1.0 and publishes its
+card at /.well-known/agent-card.json. CrewAI 1.15 ships the older 0.3 client,
+which cannot read a 1.0 card, so the same card is also served in 0.3 format at
+LEGACY_CARD_PATH. The JSON-RPC endpoint accepts both protocol versions (ADK
+enables a2a-sdk's v0.3 compatibility), so a CrewAI agent and an ADK agent can
+both call SafeSpeak: interoperability across the two frameworks.
 """
 
 from __future__ import annotations
@@ -27,15 +34,22 @@ from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 from urllib.parse import urlparse
 
+from a2a.compat.v0_3.conversions import to_compat_agent_card
+from google.adk.a2a.utils.agent_card_builder import AgentCardBuilder
 from google.adk.a2a.utils.agent_to_a2a import to_a2a
 from google.adk.agents import BaseAgent, InvocationContext
 from google.adk.events import Event
 from google.genai import types
 from pydantic import PrivateAttr
 from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+from starlette.routing import Route
 
 from safespeak import config
 from safespeak.app import SafeSpeakService
+
+LEGACY_CARD_PATH = "/.well-known/agent-card-v0.3.json"
 
 DESCRIPTION = (
     "SafeSpeak checks a suspicious SMS, email or WhatsApp message (English, Hindi or Hinglish) "
@@ -76,7 +90,24 @@ def build_app(model=None, public_url: str | None = None) -> Starlette:
             agent.use(service)
             yield
 
-    return to_a2a(agent, protocol=protocol, host=host, port=port, lifespan=lifespan)
+    app = to_a2a(agent, protocol=protocol, host=host, port=port, lifespan=lifespan)
+    rpc_url = f"{protocol}://{host}:{port}/"
+    app.router.routes.append(Route(LEGACY_CARD_PATH, legacy_card_endpoint(agent, rpc_url)))
+    return app
+
+
+def legacy_card_endpoint(agent: BaseAgent, rpc_url: str):
+    """Serve our agent card in A2A 0.3 format, for CrewAI's A2A client."""
+    cached: dict = {}
+
+    async def endpoint(_request: Request) -> JSONResponse:
+        if not cached:
+            card = await AgentCardBuilder(agent=agent, rpc_url=rpc_url).build()
+            card.supported_interfaces.add(url=rpc_url, protocol_binding="JSONRPC", protocol_version="0.3")
+            cached.update(to_compat_agent_card(card).model_dump(mode="json", by_alias=True, exclude_none=True))
+        return JSONResponse(cached)
+
+    return endpoint
 
 
 def card_address(url: str) -> tuple[str, str, int]:
